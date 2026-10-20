@@ -1,8 +1,11 @@
-"""Draft causal-account contract (schema v0.1).
+"""Draft causal-account contract (schema v0.2).
 
 The causal account is the single contract between the deterministic core
 (stage 4 produces it) and everything downstream (stages 5, 6 and 7 consume it).
-Only the types live here; nothing in Build 1 produces accounts.
+Only the types live here; nothing produces accounts until Build 4.
+
+v0.2: the embedded moment is the shared ``contracts.moment.Moment`` (Build 2),
+and event references carry ``period_id``.
 
 Invariants enforced on construction:
 
@@ -20,55 +23,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
 
-SCHEMA_VERSION = "0.1"
+from replay_room.contracts.moment import Moment
+from replay_room.contracts.refs import EvidenceRef, _Model
 
-
-class _Model(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-
-class EventRef(_Model):
-    """Points at one on-ball SPADL action."""
-
-    kind: Literal["event"] = "event"
-    action_id: int
-    original_event_id: str
-    time_seconds: float
-
-
-class FrameRef(_Model):
-    """Points at one tracking frame, optionally naming the players that matter in it."""
-
-    kind: Literal["frame"] = "frame"
-    frame_id: int
-    timestamp: float
-    player_ids: tuple[str, ...] = ()
-
-
-EvidenceRef = Annotated[EventRef | FrameRef, Field(discriminator="kind")]
-
-
-class TrackingWindow(_Model):
-    frame_start: int
-    frame_end: int
-    t_start: float
-    t_end: float
-
-
-class Moment(_Model):
-    moment_id: str
-    moment_type: Literal["goal"]  # MVP: goals only
-    period_id: int
-    t_event: float
-    team_id: str  # the team credited with the moment (scoring team for a goal)
-    key_action_id: int  # the shot (or own-goal action) that defines the moment
-    key_player_id: str
-    chain_action_ids: tuple[int, ...]  # the possession chain, in order, ending at key_action_id
-    window: TrackingWindow
+SCHEMA_VERSION = "0.2"
 
 
 ContributionKind = Literal[
@@ -132,7 +94,7 @@ class Provenance(_Model):
 
 
 class CausalAccount(_Model):
-    schema_version: Literal["0.1"] = SCHEMA_VERSION
+    schema_version: Literal["0.2"] = SCHEMA_VERSION
     account_id: str
     game_id: str
     moment: Moment

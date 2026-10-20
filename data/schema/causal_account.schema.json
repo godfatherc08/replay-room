@@ -188,7 +188,7 @@
     },
     "EventRef": {
       "additionalProperties": false,
-      "description": "Points at one on-ball SPADL action.",
+      "description": "Points at one on-ball SPADL action (``action_id`` is unique within a game).",
       "properties": {
         "action_id": {
           "title": "Action Id",
@@ -204,6 +204,10 @@
           "title": "Original Event Id",
           "type": "string"
         },
+        "period_id": {
+          "title": "Period Id",
+          "type": "integer"
+        },
         "time_seconds": {
           "title": "Time Seconds",
           "type": "number"
@@ -212,6 +216,7 @@
       "required": [
         "action_id",
         "original_event_id",
+        "period_id",
         "time_seconds"
       ],
       "title": "EventRef",
@@ -219,7 +224,7 @@
     },
     "FrameRef": {
       "additionalProperties": false,
-      "description": "Points at one tracking frame, optionally naming the players that matter in it.",
+      "description": "Points at one tracking frame (``frame_id`` is unique within a game), optionally\nnaming the players that matter in it.",
       "properties": {
         "frame_id": {
           "title": "Frame Id",
@@ -254,16 +259,52 @@
     "Moment": {
       "additionalProperties": false,
       "properties": {
-        "chain_action_ids": {
+        "attacking_team_id": {
+          "title": "Attacking Team Id",
+          "type": "string"
+        },
+        "chain": {
+          "items": {
+            "$ref": "#/$defs/EventRef"
+          },
+          "minItems": 1,
+          "title": "Chain",
+          "type": "array"
+        },
+        "chain_start": {
+          "enum": [
+            "regain",
+            "kickoff",
+            "set_piece",
+            "period_start",
+            "truncated"
+          ],
+          "title": "Chain Start",
+          "type": "string"
+        },
+        "contested_action_ids": {
+          "default": [],
           "items": {
             "type": "integer"
           },
-          "title": "Chain Action Ids",
+          "title": "Contested Action Ids",
           "type": "array"
         },
-        "key_action_id": {
-          "title": "Key Action Id",
-          "type": "integer"
+        "defending_team_id": {
+          "title": "Defending Team Id",
+          "type": "string"
+        },
+        "game_id": {
+          "title": "Game Id",
+          "type": "string"
+        },
+        "is_own_goal": {
+          "default": false,
+          "title": "Is Own Goal",
+          "type": "boolean"
+        },
+        "key_event_ref": {
+          "$ref": "#/$defs/EventRef"
         },
         "key_player_id": {
           "title": "Key Player Id",
@@ -273,21 +314,40 @@
           "title": "Moment Id",
           "type": "string"
         },
-        "moment_type": {
-          "const": "goal",
-          "title": "Moment Type",
-          "type": "string"
-        },
         "period_id": {
           "title": "Period Id",
           "type": "integer"
+        },
+        "possession_id": {
+          "title": "Possession Id",
+          "type": "integer"
+        },
+        "t_end": {
+          "title": "T End",
+          "type": "number"
         },
         "t_event": {
           "title": "T Event",
           "type": "number"
         },
-        "team_id": {
-          "title": "Team Id",
+        "t_start": {
+          "title": "T Start",
+          "type": "number"
+        },
+        "turnover_event_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "goal",
+          "title": "Type",
           "type": "string"
         },
         "window": {
@@ -296,13 +356,19 @@
       },
       "required": [
         "moment_id",
-        "moment_type",
+        "type",
+        "game_id",
         "period_id",
         "t_event",
-        "team_id",
-        "key_action_id",
+        "attacking_team_id",
+        "defending_team_id",
+        "key_event_ref",
         "key_player_id",
-        "chain_action_ids",
+        "possession_id",
+        "chain",
+        "chain_start",
+        "t_start",
+        "t_end",
         "window"
       ],
       "title": "Moment",
@@ -355,6 +421,10 @@
           "title": "Frame Start",
           "type": "integer"
         },
+        "period_id": {
+          "title": "Period Id",
+          "type": "integer"
+        },
         "t_end": {
           "title": "T End",
           "type": "number"
@@ -365,6 +435,7 @@
         }
       },
       "required": [
+        "period_id",
         "frame_start",
         "frame_end",
         "t_start",
@@ -411,8 +482,8 @@
       "$ref": "#/$defs/Provenance"
     },
     "schema_version": {
-      "const": "0.1",
-      "default": "0.1",
+      "const": "0.2",
+      "default": "0.2",
       "title": "Schema Version",
       "type": "string"
     }

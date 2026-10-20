@@ -1,25 +1,44 @@
 import pytest
 from pydantic import ValidationError
 
-from replay_room.contracts import CausalAccount, ContextEvent, SpadlAction
+from replay_room.contracts import CausalAccount, ContextEvent, Moment, SpadlAction
 from replay_room.contracts.causal_account import SCHEMA_PATH, json_schema_text
+
+
+def _ref(action_id, t):
+    return {"kind": "event", "action_id": action_id, "original_event_id": f"e{action_id}", "period_id": 1,
+            "time_seconds": t}
+
+
+def _moment(**overrides):
+    data = {
+        "moment_id": "g1-goal-1",
+        "type": "goal",
+        "game_id": "g1",
+        "period_id": 1,
+        "t_event": 101.3,
+        "attacking_team_id": "HOM",
+        "defending_team_id": "AWY",
+        "key_event_ref": _ref(42, 101.3),
+        "key_player_id": "HOM-09",
+        "possession_id": 7,
+        "chain": [_ref(39, 95.0), _ref(40, 97.0), _ref(41, 99.8), _ref(42, 101.3)],
+        "chain_start": "regain",
+        "turnover_event_ref": _ref(38, 94.6),
+        "contested_action_ids": [40],
+        "t_start": 89.3,
+        "t_end": 103.3,
+        "window": {"period_id": 1, "frame_start": 893, "frame_end": 1033, "t_start": 89.3, "t_end": 103.3},
+    }
+    data.update(overrides)
+    return data
 
 
 def _account(**overrides):
     data = {
         "account_id": "acc-1",
         "game_id": "g1",
-        "moment": {
-            "moment_id": "m1",
-            "moment_type": "goal",
-            "period_id": 1,
-            "t_event": 101.3,
-            "team_id": "HOM",
-            "key_action_id": 42,
-            "key_player_id": "HOM-09",
-            "chain_action_ids": [39, 40, 41, 42],
-            "window": {"frame_start": 900, "frame_end": 1030, "t_start": 90.0, "t_end": 103.0},
-        },
+        "moment": _moment(),
         "headline_contribution_id": "c1",
         "contributions": [
             {
@@ -32,7 +51,7 @@ def _account(**overrides):
                 "t": 99.8,
                 "effect": 0.21,
                 "metrics": {"vaep": 0.21},
-                "evidence": [{"kind": "event", "action_id": 41, "original_event_id": "e41", "time_seconds": 99.8}],
+                "evidence": [{"kind": "event", "action_id": 41, "original_event_id": "e41", "period_id": 1, "time_seconds": 99.8}],
             },
             {
                 "contribution_id": "c2",
@@ -89,7 +108,7 @@ def test_contribution_without_evidence_rejected():
 def test_off_ball_contribution_needs_frame_evidence():
     data = _account()
     data["contributions"][1]["evidence"] = [
-        {"kind": "event", "action_id": 40, "original_event_id": "e40", "time_seconds": 99.0}
+        {"kind": "event", "action_id": 40, "original_event_id": "e40", "period_id": 1, "time_seconds": 99.0}
     ]
     with pytest.raises(ValidationError, match="frame reference"):
         CausalAccount.model_validate(data)
@@ -132,3 +151,29 @@ def test_context_event_kind_checked():
     ContextEvent("e1", 1, 0.0, "pressure")
     with pytest.raises(ValueError):
         ContextEvent("e1", 1, 0.0, "goal")
+
+
+def test_moment_valid():
+    m = Moment.model_validate(_moment())
+    assert m.chain_action_ids == (39, 40, 41, 42)
+    assert m.window.n_frames == 141
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"chain": [_ref(39, 95.0), _ref(41, 99.8)]},  # does not end at the key event
+        {"chain": [_ref(40, 97.0), _ref(39, 95.0), _ref(42, 101.3)]},  # out of order
+        {"contested_action_ids": [12]},  # not in the chain
+        {"turnover_event_ref": None},  # regain without the lost-ball action
+        {"chain_start": "kickoff"},  # kickoff with a turnover event
+        {"turnover_event_ref": _ref(40, 97.0)},  # turnover inside the chain
+        {"defending_team_id": "HOM"},
+        {"t_end": 100.0},
+        {"window": {"period_id": 2, "frame_start": 893, "frame_end": 1033, "t_start": 89.3, "t_end": 103.3}},
+        {"window": {"period_id": 1, "frame_start": 1033, "frame_end": 893, "t_start": 89.3, "t_end": 103.3}},
+    ],
+)
+def test_moment_invariants(overrides):
+    with pytest.raises(ValidationError):
+        Moment.model_validate(_moment(**overrides))
