@@ -106,7 +106,12 @@ pyproject.toml
 
 ## Commands
 
-> Fill these in once Build 1 scaffolds the project.
-> install: (tbd — pyproject + uv/pip)
-run replay: (tbd — Build 1 CLI that replays a fixture match on the clock)
-test: (tbd — pytest)
+```
+install:      .venv/Scripts/python -m pip install -e ".[dev]"     (Python 3.11-3.12; socceraction 1.5.3 needs multimethod<2)
+run replay:   python -m replay_room.replay data/fixtures/synthetic_match_01 --speed 4
+              (--start/--end take timeline seconds or pPERIOD:SECONDS, e.g. p2:30; --instant ignores wall time;
+               keys: space pause, +/- speed, f/b seek 10 s, q quit)
+gen fixture:  python -m replay_room.ingest.generator --seed 7 --out data/fixtures/synthetic_match_01
+schema:       python -m replay_room.contracts      (regenerates data/schema/causal_account.schema.json)
+test:         python -m pytest
+```
