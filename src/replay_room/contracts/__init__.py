@@ -1,6 +1,12 @@
 """Shared type contracts. Every stage imports its types from here."""
 
-from replay_room.contracts.causal_account import CausalAccount, Contribution, Counterfactual
+from replay_room.contracts.causal_account import (
+    CausalAccount,
+    Contribution,
+    Counterfactual,
+    Participant,
+    TeamInfo,
+)
 from replay_room.contracts.moment import Moment, MomentContext, TrackingWindow
 from replay_room.contracts.refs import EventRef, FrameRef
 from replay_room.contracts.match import ContextEvent, MatchMeta, Period, Player, Team
@@ -23,10 +29,12 @@ __all__ = [
     "MatchMeta",
     "Moment",
     "MomentContext",
+    "Participant",
     "Period",
     "Player",
     "SpadlAction",
     "Team",
+    "TeamInfo",
     "TrackingFrame",
     "TrackingRow",
     "TrackingWindow",

@@ -2,8 +2,20 @@
   "$defs": {
     "Alternative": {
       "additionalProperties": false,
-      "description": "An option that was actually available, valued from the real positions.",
+      "description": "An option that was actually available at the decision frame, valued from the real positions.",
       "properties": {
+        "completion_prob": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completion Prob"
+        },
         "description": {
           "title": "Description",
           "type": "string"
@@ -57,8 +69,20 @@
     },
     "Contribution": {
       "additionalProperties": false,
-      "description": "One evidence-bound causal fact, kept because its effect cleared the threshold.",
+      "description": "One evidence-bound causal fact, kept because its effect cleared the threshold.\n\n``metrics`` holds the cited numbers, keyed by metric name: ``vaep``,\n``delta_xt``, ``xg``, ``space_created``, ``space_conceded``,\n``pitch_control_delta``, ...",
       "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Action"
+        },
         "contribution_id": {
           "title": "Contribution Id",
           "type": "string"
@@ -115,6 +139,18 @@
           "title": "Rank",
           "type": "integer"
         },
+        "role": {
+          "enum": [
+            "primary_cause",
+            "finish",
+            "assist",
+            "build_up",
+            "space_creation",
+            "defensive_error"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
         "shapley_share": {
           "anyOf": [
             {
@@ -126,6 +162,18 @@
           ],
           "default": null,
           "title": "Shapley Share"
+        },
+        "signal": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Signal"
         },
         "t": {
           "title": "T",
@@ -149,6 +197,7 @@
         "rank",
         "track",
         "kind",
+        "role",
         "player_id",
         "team_id",
         "t",
@@ -160,6 +209,7 @@
     },
     "Counterfactual": {
       "additionalProperties": false,
+      "description": "'A better option existed'. Surfaced only when it beats the chosen action by the margin.",
       "properties": {
         "alternatives": {
           "items": {
@@ -169,6 +219,10 @@
           "title": "Alternatives",
           "type": "array"
         },
+        "chosen": {
+          "title": "Chosen",
+          "type": "string"
+        },
         "chosen_value": {
           "title": "Chosen Value",
           "type": "number"
@@ -176,10 +230,15 @@
         "contribution_id": {
           "title": "Contribution Id",
           "type": "string"
+        },
+        "decision_frame": {
+          "$ref": "#/$defs/FrameRef"
         }
       },
       "required": [
         "contribution_id",
+        "decision_frame",
+        "chosen",
         "chosen_value",
         "alternatives"
       ],
@@ -374,9 +433,61 @@
       "title": "Moment",
       "type": "object"
     },
+    "Participant": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "player_id": {
+          "title": "Player Id",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Position"
+        },
+        "shirt_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shirt Number"
+        },
+        "team_id": {
+          "title": "Team Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "player_id",
+        "name",
+        "team_id"
+      ],
+      "title": "Participant",
+      "type": "object"
+    },
     "Provenance": {
       "additionalProperties": false,
       "properties": {
+        "counterfactual_margin": {
+          "title": "Counterfactual Margin",
+          "type": "number"
+        },
         "effect_threshold": {
           "title": "Effect Threshold",
           "type": "number"
@@ -405,9 +516,29 @@
         "pipeline_version",
         "source",
         "effect_threshold",
+        "counterfactual_margin",
         "generated_at"
       ],
       "title": "Provenance",
+      "type": "object"
+    },
+    "TeamInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "team_id": {
+          "title": "Team Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "team_id",
+        "name"
+      ],
+      "title": "TeamInfo",
       "type": "object"
     },
     "TrackingWindow": {
@@ -478,20 +609,44 @@
     "moment": {
       "$ref": "#/$defs/Moment"
     },
+    "participants": {
+      "items": {
+        "$ref": "#/$defs/Participant"
+      },
+      "minItems": 1,
+      "title": "Participants",
+      "type": "array"
+    },
     "provenance": {
       "$ref": "#/$defs/Provenance"
     },
     "schema_version": {
-      "const": "0.2",
-      "default": "0.2",
+      "const": "0.3",
+      "default": "0.3",
       "title": "Schema Version",
       "type": "string"
+    },
+    "teams": {
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/TeamInfo"
+        },
+        {
+          "$ref": "#/$defs/TeamInfo"
+        }
+      ],
+      "title": "Teams",
+      "type": "array"
     }
   },
   "required": [
     "account_id",
     "game_id",
     "moment",
+    "teams",
+    "participants",
     "headline_contribution_id",
     "contributions",
     "provenance"

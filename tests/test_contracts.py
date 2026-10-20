@@ -1,3 +1,5 @@
+import copy
+
 import pytest
 from pydantic import ValidationError
 
@@ -10,6 +12,10 @@ def _ref(action_id, t):
             "time_seconds": t}
 
 
+def _frame(frame_id, *players):
+    return {"kind": "frame", "frame_id": frame_id, "timestamp": frame_id / 10, "player_ids": list(players)}
+
+
 def _moment(**overrides):
     data = {
         "moment_id": "g1-goal-1",
@@ -20,7 +26,7 @@ def _moment(**overrides):
         "attacking_team_id": "HOM",
         "defending_team_id": "AWY",
         "key_event_ref": _ref(42, 101.3),
-        "key_player_id": "HOM-09",
+        "key_player_id": "HOM-07",
         "possession_id": 7,
         "chain": [_ref(39, 95.0), _ref(40, 97.0), _ref(41, 99.8), _ref(42, 101.3)],
         "chain_start": "regain",
@@ -35,47 +41,53 @@ def _moment(**overrides):
 
 
 def _account(**overrides):
+    """Mirrors the example account in REPLAY_ROOM_TECHNICAL_SPEC.md section 4."""
     data = {
         "account_id": "acc-1",
         "game_id": "g1",
         "moment": _moment(),
+        "teams": [{"team_id": "HOM", "name": "Home FC"}, {"team_id": "AWY", "name": "Away FC"}],
+        "participants": [
+            {"player_id": "HOM-07", "name": "A Seven", "team_id": "HOM"},
+            {"player_id": "HOM-09", "name": "A Nine", "team_id": "HOM"},
+            {"player_id": "AWY-04", "name": "D Four", "team_id": "AWY"},
+        ],
         "headline_contribution_id": "c1",
         "contributions": [
             {
-                "contribution_id": "c1",
-                "rank": 1,
-                "track": "on_ball",
-                "kind": "action_value",
-                "player_id": "HOM-08",
-                "team_id": "HOM",
-                "t": 99.8,
-                "effect": 0.21,
-                "metrics": {"vaep": 0.21},
-                "evidence": [{"kind": "event", "action_id": 41, "original_event_id": "e41", "period_id": 1, "time_seconds": 99.8}],
+                "contribution_id": "c1", "rank": 1, "track": "off_ball", "kind": "marking_break",
+                "role": "primary_cause", "signal": "stopped_tracking_runner",
+                "player_id": "AWY-04", "team_id": "AWY", "t": 99.4, "effect": 0.18,
+                "metrics": {"space_conceded": 0.18}, "evidence": [_frame(994, "AWY-04", "HOM-07")],
             },
             {
-                "contribution_id": "c2",
-                "rank": 2,
-                "track": "off_ball",
-                "kind": "space_creation",
-                "player_id": "HOM-11",
-                "team_id": "HOM",
-                "t": 99.0,
-                "effect": 0.08,
-                "evidence": [{"kind": "frame", "frame_id": 990, "timestamp": 99.0, "player_ids": ["HOM-11"]}],
+                "contribution_id": "c2", "rank": 2, "track": "off_ball", "kind": "space_creation",
+                "role": "space_creation", "signal": "run_in_behind",
+                "player_id": "HOM-07", "team_id": "HOM", "t": 99.0, "effect": 0.14,
+                "metrics": {"space_created": 0.14}, "evidence": [_frame(990, "HOM-07")],
+            },
+            {
+                "contribution_id": "c3", "rank": 3, "track": "on_ball", "kind": "action_value",
+                "role": "assist", "action": "through_ball",
+                "player_id": "HOM-09", "team_id": "HOM", "t": 99.8, "effect": 0.11,
+                "metrics": {"vaep": 0.11}, "evidence": [_ref(41, 99.8)],
+            },
+            {
+                "contribution_id": "c4", "rank": 4, "track": "on_ball", "kind": "action_value",
+                "role": "finish", "action": "shot",
+                "player_id": "HOM-07", "team_id": "HOM", "t": 101.3, "effect": 0.09,
+                "metrics": {"xg": 0.41, "vaep": 0.09}, "evidence": [_ref(42, 101.3)],
             },
         ],
         "counterfactuals": [
             {
-                "contribution_id": "c1",
-                "chosen_value": 0.21,
+                "contribution_id": "c4",
+                "decision_frame": _frame(1013, "HOM-07", "HOM-09"),
+                "chosen": "shot",
+                "chosen_value": 0.41,
                 "alternatives": [
-                    {
-                        "description": "pass to HOM-07",
-                        "target_player_id": "HOM-07",
-                        "value": 0.25,
-                        "evidence": [{"kind": "frame", "frame_id": 998, "timestamp": 99.8}],
-                    }
+                    {"description": "square pass to HOM-09", "target_player_id": "HOM-09",
+                     "completion_prob": 0.83, "value": 0.55, "evidence": [_frame(1013, "HOM-09")]},
                 ],
             }
         ],
@@ -83,6 +95,7 @@ def _account(**overrides):
             "pipeline_version": "0.1.0",
             "source": "synthetic-v1",
             "effect_threshold": 0.02,
+            "counterfactual_margin": 0.05,
             "generated_at": "2026-10-20T00:00:00Z",
         },
     }
@@ -90,47 +103,44 @@ def _account(**overrides):
     return data
 
 
+def _mutated(fn):
+    data = copy.deepcopy(_account())
+    fn(data)
+    return data
+
+
 def test_causal_account_valid_roundtrip():
     account = CausalAccount.model_validate(_account())
-    assert account.headline.player_id == "HOM-08"
-    assert account.counterfactuals[0].best_gap == pytest.approx(0.04)
+    assert account.headline.signal == "stopped_tracking_runner"
+    assert account.counterfactuals[0].best_gap == pytest.approx(0.14)
+    assert account.evidence_index() == {"events": [41, 42], "frames": [990, 994, 1013]}
     again = CausalAccount.model_validate_json(account.model_dump_json())
     assert again == account
 
 
-def test_contribution_without_evidence_rejected():
-    data = _account()
-    data["contributions"][0]["evidence"] = []
-    with pytest.raises(ValidationError):
-        CausalAccount.model_validate(data)
-
-
-def test_off_ball_contribution_needs_frame_evidence():
-    data = _account()
-    data["contributions"][1]["evidence"] = [
-        {"kind": "event", "action_id": 40, "original_event_id": "e40", "period_id": 1, "time_seconds": 99.0}
-    ]
-    with pytest.raises(ValidationError, match="frame reference"):
-        CausalAccount.model_validate(data)
-
-
 @pytest.mark.parametrize(
-    "overrides",
+    ("mutate", "match"),
     [
-        {"headline_contribution_id": "nope"},
-        {"counterfactuals": [{**_account()["counterfactuals"][0], "contribution_id": "c2"}]},
+        (lambda d: d["contributions"][0].update(evidence=[]), None),
+        (lambda d: d["contributions"][0].update(evidence=[_ref(41, 99.8)]), "frame reference"),
+        (lambda d: d["contributions"][2].update(evidence=[_frame(998)]), "event reference"),
+        (lambda d: d["contributions"][2].update(action=None), "action label"),
+        (lambda d: d["contributions"][1].update(signal=None), "signal label"),
+        (lambda d: d["contributions"][1].update(rank=3), "rank"),
+        (lambda d: d["contributions"][3].update(effect=-0.5), r"\|effect\|"),
+        (lambda d: d["contributions"][1].update(role="primary_cause"), "primary_cause"),
+        (lambda d: d.update(headline_contribution_id="nope"), "headline"),
+        (lambda d: d["counterfactuals"][0].update(contribution_id="c2"), "on-ball"),
+        (lambda d: d["provenance"].update(counterfactual_margin=0.2), "margin"),
+        (lambda d: d["counterfactuals"][0]["alternatives"].append(
+            {"description": "shoot far post", "value": 0.6, "evidence": [_frame(1013)]}), "best first"),
+        (lambda d: d["participants"].pop(), "participants"),
+        (lambda d: d["teams"][1].update(team_id="XYZ"), "teams"),
     ],
 )
-def test_dangling_references_rejected(overrides):
-    with pytest.raises(ValidationError):
-        CausalAccount.model_validate(_account(**overrides))
-
-
-def test_ranks_must_be_contiguous():
-    data = _account()
-    data["contributions"][1]["rank"] = 3
-    with pytest.raises(ValidationError, match="rank"):
-        CausalAccount.model_validate(data)
+def test_account_invariants(mutate, match):
+    with pytest.raises(ValidationError, match=match):
+        CausalAccount.model_validate(_mutated(mutate))
 
 
 def test_checked_in_json_schema_is_current():
