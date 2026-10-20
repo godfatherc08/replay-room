@@ -61,3 +61,12 @@ class MetricModels:
 def load_models(path: str = str(MODELS_DIR)) -> MetricModels:
     """The bundle in ``data/models/`` (train with ``python -m replay_room.metrics.train``)."""
     return MetricModels.load(Path(path))
+
+
+@lru_cache(maxsize=4)
+def load_xg_model(path: str = str(MODELS_DIR)) -> XGModel:
+    """Just the xG model from the bundle (moment detection needs nothing else)."""
+    file = Path(path) / "xg.json"
+    if not file.is_file():
+        raise FileNotFoundError(f"no xG model at {file}: python -m replay_room.metrics.train")
+    return XGModel.from_dict(json.loads(file.read_text(encoding="utf-8")))

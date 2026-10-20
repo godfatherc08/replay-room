@@ -13,6 +13,9 @@ ContextKind = Literal[
     "pressure",
     "possession_change",
     "ball_out_of_play",
+    "substitution",
+    "injury",
+    "var_decision",
 ]
 CONTEXT_KINDS: tuple[str, ...] = ContextKind.__args__  # type: ignore[attr-defined]
 
@@ -79,7 +82,10 @@ class ContextEvent:
     """A feed event that is not an on-ball SPADL action (pressure, possession change, ...).
 
     ``player_id`` is the actor (e.g. the presser); ``target_player_id`` the player
-    acted on (e.g. the pressed ball carrier), when there is one.
+    acted on (e.g. the pressed ball carrier), when there is one. For a
+    ``substitution`` the actor is the player going off and the target the one
+    coming on. ``detail`` is the feed's own label where a kind needs one (the
+    ``var_decision`` outcome, e.g. ``"goal_stands"``).
     """
 
     event_id: str
@@ -91,6 +97,7 @@ class ContextEvent:
     target_player_id: str | None = None
     x: float | None = None
     y: float | None = None
+    detail: str | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in CONTEXT_KINDS:

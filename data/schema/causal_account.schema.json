@@ -67,6 +67,37 @@
       "title": "Alternative",
       "type": "object"
     },
+    "ContextRef": {
+      "additionalProperties": false,
+      "description": "Points at one non-SPADL context event (``ContextEvent.event_id``), e.g. a\nsubstitution. Moment keys only: never evidence for a causal claim.",
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "context",
+          "default": "context",
+          "title": "Kind",
+          "type": "string"
+        },
+        "period_id": {
+          "title": "Period Id",
+          "type": "integer"
+        },
+        "time_seconds": {
+          "title": "Time Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "event_id",
+        "period_id",
+        "time_seconds"
+      ],
+      "title": "ContextRef",
+      "type": "object"
+    },
     "Contribution": {
       "additionalProperties": false,
       "description": "One evidence-bound causal fact, kept because its effect cleared the threshold.\n\n``metrics`` holds the cited numbers, keyed by metric name: ``vaep``,\n``delta_xt``, ``xg``, ``space_created``, ``space_conceded``,\n``pitch_control_delta``, ...",
@@ -319,27 +350,42 @@
       "additionalProperties": false,
       "properties": {
         "attacking_team_id": {
-          "title": "Attacking Team Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Attacking Team Id"
         },
         "chain": {
+          "default": [],
           "items": {
             "$ref": "#/$defs/EventRef"
           },
-          "minItems": 1,
           "title": "Chain",
           "type": "array"
         },
         "chain_start": {
-          "enum": [
-            "regain",
-            "kickoff",
-            "set_piece",
-            "period_start",
-            "truncated"
+          "anyOf": [
+            {
+              "enum": [
+                "regain",
+                "kickoff",
+                "set_piece",
+                "period_start",
+                "truncated"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ],
-          "title": "Chain Start",
-          "type": "string"
+          "default": null,
+          "title": "Chain Start"
         },
         "contested_action_ids": {
           "default": [],
@@ -350,8 +396,31 @@
           "type": "array"
         },
         "defending_team_id": {
-          "title": "Defending Team Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Defending Team Id"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "engine_eligible": {
+          "title": "Engine Eligible",
+          "type": "boolean"
         },
         "game_id": {
           "title": "Game Id",
@@ -363,23 +432,106 @@
           "type": "boolean"
         },
         "key_event_ref": {
-          "$ref": "#/$defs/EventRef"
+          "discriminator": {
+            "mapping": {
+              "context": "#/$defs/ContextRef",
+              "event": "#/$defs/EventRef"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/EventRef"
+            },
+            {
+              "$ref": "#/$defs/ContextRef"
+            }
+          ],
+          "title": "Key Event Ref"
         },
         "key_player_id": {
-          "title": "Key Player Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Key Player Id"
         },
         "moment_id": {
           "title": "Moment Id",
           "type": "string"
+        },
+        "outcome_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "outcome_scored": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome Scored"
+        },
+        "outcome_xg": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome Xg"
         },
         "period_id": {
           "title": "Period Id",
           "type": "integer"
         },
         "possession_id": {
-          "title": "Possession Id",
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Possession Id"
+        },
+        "secondary_types": {
+          "default": [],
+          "items": {
+            "enum": [
+              "goal",
+              "turnover_to_shot",
+              "big_chance_saved",
+              "penalty",
+              "offside",
+              "var_decision",
+              "injury",
+              "substitution"
+            ],
+            "type": "string"
+          },
+          "title": "Secondary Types",
+          "type": "array"
         },
         "t_end": {
           "title": "T End",
@@ -393,6 +545,18 @@
           "title": "T Start",
           "type": "number"
         },
+        "team_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Team Id"
+        },
         "turnover_event_ref": {
           "anyOf": [
             {
@@ -405,17 +569,35 @@
           "default": null
         },
         "type": {
-          "const": "goal",
+          "enum": [
+            "goal",
+            "turnover_to_shot",
+            "big_chance_saved",
+            "penalty",
+            "offside",
+            "var_decision",
+            "injury",
+            "substitution"
+          ],
           "title": "Type",
           "type": "string"
         },
         "window": {
-          "$ref": "#/$defs/TrackingWindow"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrackingWindow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
         "moment_id",
         "type",
+        "engine_eligible",
         "game_id",
         "period_id",
         "t_event",
@@ -423,12 +605,8 @@
         "defending_team_id",
         "key_event_ref",
         "key_player_id",
-        "possession_id",
-        "chain",
-        "chain_start",
         "t_start",
-        "t_end",
-        "window"
+        "t_end"
       ],
       "title": "Moment",
       "type": "object"
@@ -621,8 +799,8 @@
       "$ref": "#/$defs/Provenance"
     },
     "schema_version": {
-      "const": "0.3",
-      "default": "0.3",
+      "const": "0.4",
+      "default": "0.4",
       "title": "Schema Version",
       "type": "string"
     },

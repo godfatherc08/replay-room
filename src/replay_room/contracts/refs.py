@@ -31,4 +31,14 @@ class FrameRef(_Model):
     player_ids: tuple[str, ...] = ()
 
 
+class ContextRef(_Model):
+    """Points at one non-SPADL context event (``ContextEvent.event_id``), e.g. a
+    substitution. Moment keys only: never evidence for a causal claim."""
+
+    kind: Literal["context"] = "context"
+    event_id: str
+    period_id: int
+    time_seconds: float
+
+
 EvidenceRef = Annotated[EventRef | FrameRef, Field(discriminator="kind")]

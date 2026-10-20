@@ -1,4 +1,4 @@
-"""Causal-account contract (schema v0.3), per REPLAY_ROOM_TECHNICAL_SPEC.md section 4.
+"""Causal-account contract (schema v0.4), per REPLAY_ROOM_TECHNICAL_SPEC.md section 4.
 
 The causal account is the single contract between the deterministic core
 (stage 4 produces it) and everything downstream (stages 5, 6 and 7 consume it).
@@ -16,6 +16,8 @@ views flip the sign; the account does not.
 
 Invariants enforced on construction:
 
+* the moment is ``engine_eligible`` (an explained class): flagged moments
+  such as offsides or substitutions never get an account;
 * every contribution carries an evidence reference matching its track
   (``on_ball`` -> event, ``off_ball`` -> frame) and its label
   (``action`` for on-ball, ``signal`` for off-ball);
@@ -30,7 +32,10 @@ Invariants enforced on construction:
 Versions: v0.2 embedded the shared ``contracts.moment.Moment`` (Build 2) and
 added ``period_id`` to event refs. v0.3 aligns with spec section 4: ``role``,
 ``action``/``signal``, absolute-effect ranking, a grounded counterfactual
-(decision frame + margin), and ``teams``/``participants``.
+(decision frame + margin), and ``teams``/``participants``. v0.4 embeds the
+class-agnostic ``Moment`` (``type`` over explained + flagged classes,
+``engine_eligible``, the terminal ``outcome_ref`` whose value the account
+attributes over) and accepts only engine-eligible moments.
 
 The JSON Schema export lives at ``data/schema/causal_account.schema.json`` and
 is regenerated with ``python -m replay_room.contracts``.
@@ -47,7 +52,7 @@ from pydantic import Field, model_validator
 from replay_room.contracts.moment import Moment
 from replay_room.contracts.refs import EvidenceRef, FrameRef, _Model
 
-SCHEMA_VERSION = "0.3"
+SCHEMA_VERSION = "0.4"
 
 
 ContributionKind = Literal[
@@ -160,7 +165,7 @@ class Provenance(_Model):
 
 
 class CausalAccount(_Model):
-    schema_version: Literal["0.3"] = SCHEMA_VERSION
+    schema_version: Literal["0.4"] = SCHEMA_VERSION
     account_id: str
     game_id: str
     moment: Moment
@@ -173,6 +178,8 @@ class CausalAccount(_Model):
 
     @model_validator(mode="after")
     def _check_integrity(self) -> CausalAccount:
+        if not self.moment.engine_eligible:
+            raise ValueError(f"{self.moment.type} moments are flagged, not explained: no causal account")
         ranks = [c.rank for c in self.contributions]
         if ranks != list(range(1, len(ranks) + 1)):
             raise ValueError(f"contributions must be ordered by rank 1..n, got {ranks}")

@@ -20,6 +20,7 @@ def _moment(**overrides):
     data = {
         "moment_id": "g1-goal-1",
         "type": "goal",
+        "engine_eligible": True,
         "game_id": "g1",
         "period_id": 1,
         "t_event": 101.3,
@@ -27,6 +28,8 @@ def _moment(**overrides):
         "defending_team_id": "AWY",
         "key_event_ref": _ref(42, 101.3),
         "key_player_id": "HOM-07",
+        "outcome_ref": _ref(42, 101.3),
+        "outcome_scored": True,
         "possession_id": 7,
         "chain": [_ref(39, 95.0), _ref(40, 97.0), _ref(41, 99.8), _ref(42, 101.3)],
         "chain_start": "regain",
@@ -182,8 +185,62 @@ def test_moment_valid():
         {"t_end": 100.0},
         {"window": {"period_id": 2, "frame_start": 893, "frame_end": 1033, "t_start": 89.3, "t_end": 103.3}},
         {"window": {"period_id": 1, "frame_start": 1033, "frame_end": 893, "t_start": 89.3, "t_end": 103.3}},
+        {"engine_eligible": False},  # a goal is explained
+        {"outcome_ref": None},  # explained moments name their terminal action
+        {"outcome_scored": False},  # a goal moment scored
+        {"outcome_ref": _ref(43, 103.0)},  # outcome is the key event (only a penalty's follows it)
+        {"type": "big_chance_saved"},  # ...that did not score
+        {"secondary_types": ["goal"]},  # not its own type
+        {"window": None},
+        {"key_event_ref": {"kind": "context", "event_id": "c1", "period_id": 1, "time_seconds": 101.3}},
     ],
 )
 def test_moment_invariants(overrides):
     with pytest.raises(ValidationError):
         Moment.model_validate(_moment(**overrides))
+
+
+def _flagged(**overrides):
+    data = {
+        "moment_id": "g1-substitution-1", "type": "substitution", "engine_eligible": False, "game_id": "g1",
+        "period_id": 2, "t_event": 61.0, "attacking_team_id": None, "defending_team_id": None, "team_id": "HOM",
+        "key_event_ref": {"kind": "context", "event_id": "c9", "period_id": 2, "time_seconds": 61.0},
+        "key_player_id": "HOM-07", "t_start": 61.0, "t_end": 61.0,
+    }
+    data.update(overrides)
+    return data
+
+
+def test_flagged_moment_valid():
+    m = Moment.model_validate(_flagged())
+    assert not m.engine_eligible and m.chain == () and m.window is None and m.outcome_ref is None
+    assert Moment.model_validate_json(m.model_dump_json()) == m
+
+
+def test_penalty_outcome_follows_key_event():
+    m = Moment.model_validate(_moment(type="penalty", outcome_ref=_ref(43, 140.0), outcome_xg=0.76,
+                                      secondary_types=["goal"]))
+    assert m.outcome_ref.action_id == 43 and m.key_event_ref.action_id == 42
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"engine_eligible": True},  # flagged classes are never engine-eligible
+        {"chain": [_ref(39, 61.0)]},
+        {"outcome_ref": _ref(42, 61.0)},
+        {"outcome_xg": 0.3},
+        {"possession_id": 3},
+        {"attacking_team_id": "HOM"},  # attacking and defending come together
+    ],
+)
+def test_flagged_moment_invariants(overrides):
+    with pytest.raises(ValidationError):
+        Moment.model_validate(_flagged(**overrides))
+
+
+def test_account_rejects_flagged_moment():
+    offside = _flagged(type="offside", moment_id="g1-offside-1", attacking_team_id="HOM", defending_team_id="AWY",
+                       period_id=1, t_event=101.3, t_start=101.3, t_end=101.3, key_event_ref=_ref(42, 101.3))
+    with pytest.raises(ValidationError, match="flagged, not explained"):
+        CausalAccount.model_validate(_account(moment=offside))

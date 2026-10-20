@@ -25,7 +25,7 @@ Columns `game_id, original_event_id, action_id, period_id, time_seconds, team_id
 
 ### Context events (not SPADL)
 
-The challenge asks us to ingest pressure events, possession changes and match metadata. SPADL has no type for these, so they go in `ContextEvent` with `kind` ∈ `period_start, period_end, pressure, possession_change, ball_out_of_play`. `player_id` is the actor (e.g. the presser) and `target_player_id` is the player acted on (the pressed carrier).
+The challenge asks us to ingest pressure events, possession changes and match metadata. SPADL has no type for these, so they go in `ContextEvent` with `kind` ∈ `period_start, period_end, pressure, possession_change, ball_out_of_play, substitution, injury, var_decision`. `player_id` is the actor (e.g. the presser) and `target_player_id` is the player acted on (the pressed carrier); for a substitution they are the player going off and the one coming on. `detail` carries a kind's own label (the `var_decision` outcome, e.g. `goal_stands`). The last three only feed the flagged moment classes (detected, never explained).
 
 ### Pass targets (not SPADL)
 
@@ -59,10 +59,16 @@ Raw frame: metres, **origin at the centre spot**, y up. **Sides switch at half t
 | `Shot` | `shot` | goal → success; saved / off_target / blocked → fail |
 | `KeeperSave` | `keeper_save` | success |
 | `Clearance` | `clearance` | success (mapped, not generated yet) |
+| `Pass` with `outcome: offside` | `pass` | offside (mapped, not generated yet) |
+| `Foul` | `foul` | fail, socceraction's encoding of a foul without a card (mapped, not generated yet) |
+| `Penalty` | `shot_penalty` | goal → success; saved / off_target → fail (mapped, not generated yet) |
 | `Pressure` | context `pressure` | n/a |
 | `PossessionChange` | context `possession_change` | n/a |
 | `BallOut` | context `ball_out_of_play` | n/a |
 | `PeriodStart` / `PeriodEnd` | context `period_start` / `period_end` | n/a |
+| `Substitution` (`player` off, `target` on) | context `substitution` | n/a (mapped, not generated yet) |
+| `Injury` | context `injury` | n/a (mapped, not generated yet) |
+| `VarDecision` (`decision`) | context `var_decision`, `detail` = decision | n/a (mapped, not generated yet) |
 
 Body part: `right_foot → foot_right`, `left_foot → foot_left`, `head → head`, missing → `foot`. Any unmapped type or outcome is an **error**, never silently dropped (tested: every raw event id is accounted for).
 
@@ -79,6 +85,8 @@ Body part: `right_foot → foot_right`, `left_foot → foot_left`, `head → hea
 - [ ] Frame rate (10 / 25 Hz?), timestamp format, time origin per period vs whole match
 - [ ] Are velocities supplied, or must they be derived (and smoothed)? Ball z present?
 - [ ] Event taxonomy → SPADL mapping table (pressure? duels? carries supplied or inferred?)
+- [ ] How penalties (award foul + kick), offsides, substitutions, injuries and VAR decisions are encoded; cards (red cards are out of MVP scope and must not become moments)
+- [ ] Re-tune the moment thresholds against the real xG distribution (`detect/explained.py`: `BIG_CHANCE_XG` is 0.15 for the synthetic feed, conventionally ~0.3)
 - [ ] Do passes name their intended receiver, **including incomplete passes**? (Needed to retrain the pass model without leaking the outcome.)
 - [ ] ID types and how event player ids join to tracking object ids
 - [ ] Event timestamps vs tracking timestamps: same clock? any offset?

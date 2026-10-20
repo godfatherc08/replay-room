@@ -1,0 +1,322 @@
+[
+  {
+    "moment_id": "SYN-0007-goal-1",
+    "type": "goal",
+    "game_id": "SYN-0007",
+    "period_id": 1,
+    "t_event": 39.4,
+    "attacking_team_id": "EPA",
+    "defending_team_id": "NBR",
+    "key_event_ref": {
+      "kind": "event",
+      "action_id": 36,
+      "original_event_id": "ev00052",
+      "period_id": 1,
+      "time_seconds": 39.4
+    },
+    "key_player_id": "EPA-09",
+    "is_own_goal": false,
+    "possession_id": 7,
+    "chain": [
+      {
+        "kind": "event",
+        "action_id": 31,
+        "original_event_id": "ev00044",
+        "period_id": 1,
+        "time_seconds": 31.8
+      },
+      {
+        "kind": "event",
+        "action_id": 32,
+        "original_event_id": "ev00047",
+        "period_id": 1,
+        "time_seconds": 32.2
+      },
+      {
+        "kind": "event",
+        "action_id": 33,
+        "original_event_id": "ev00048",
+        "period_id": 1,
+        "time_seconds": 33.6
+      },
+      {
+        "kind": "event",
+        "action_id": 34,
+        "original_event_id": "ev00049",
+        "period_id": 1,
+        "time_seconds": 35.0
+      },
+      {
+        "kind": "event",
+        "action_id": 35,
+        "original_event_id": "ev00050",
+        "period_id": 1,
+        "time_seconds": 36.4
+      },
+      {
+        "kind": "event",
+        "action_id": 36,
+        "original_event_id": "ev00052",
+        "period_id": 1,
+        "time_seconds": 39.4
+      }
+    ],
+    "chain_start": "regain",
+    "turnover_event_ref": {
+      "kind": "event",
+      "action_id": 30,
+      "original_event_id": "ev00043",
+      "period_id": 1,
+      "time_seconds": 31.4
+    },
+    "contested_action_ids": [],
+    "t_start": 29.4,
+    "t_end": 41.4,
+    "window": {
+      "period_id": 1,
+      "frame_start": 294,
+      "frame_end": 414,
+      "t_start": 29.4,
+      "t_end": 41.4
+    }
+  },
+  {
+    "moment_id": "SYN-0007-goal-2",
+    "type": "goal",
+    "game_id": "SYN-0007",
+    "period_id": 2,
+    "t_event": 7.4,
+    "attacking_team_id": "EPA",
+    "defending_team_id": "NBR",
+    "key_event_ref": {
+      "kind": "event",
+      "action_id": 115,
+      "original_event_id": "ev00158",
+      "period_id": 2,
+      "time_seconds": 7.4
+    },
+    "key_player_id": "EPA-09",
+    "is_own_goal": false,
+    "possession_id": 20,
+    "chain": [
+      {
+        "kind": "event",
+        "action_id": 111,
+        "original_event_id": "ev00153",
+        "period_id": 2,
+        "time_seconds": 0.0
+      },
+      {
+        "kind": "event",
+        "action_id": 112,
+        "original_event_id": "ev00154",
+        "period_id": 2,
+        "time_seconds": 2.4
+      },
+      {
+        "kind": "event",
+        "action_id": 113,
+        "original_event_id": "ev00155",
+        "period_id": 2,
+        "time_seconds": 3.9
+      },
+      {
+        "kind": "event",
+        "action_id": 114,
+        "original_event_id": "ev00157",
+        "period_id": 2,
+        "time_seconds": 5.0
+      },
+      {
+        "kind": "event",
+        "action_id": 115,
+        "original_event_id": "ev00158",
+        "period_id": 2,
+        "time_seconds": 7.4
+      }
+    ],
+    "chain_start": "period_start",
+    "turnover_event_ref": null,
+    "contested_action_ids": [],
+    "t_start": 0.0,
+    "t_end": 9.4,
+    "window": {
+      "period_id": 2,
+      "frame_start": 1501,
+      "frame_end": 1595,
+      "t_start": 0.0,
+      "t_end": 9.4
+    }
+  },
+  {
+    "moment_id": "SYN-0007-goal-3",
+    "type": "goal",
+    "game_id": "SYN-0007",
+    "period_id": 2,
+    "t_event": 33.0,
+    "attacking_team_id": "EPA",
+    "defending_team_id": "NBR",
+    "key_event_ref": {
+      "kind": "event",
+      "action_id": 129,
+      "original_event_id": "ev00178",
+      "period_id": 2,
+      "time_seconds": 33.0
+    },
+    "key_player_id": "EPA-07",
+    "is_own_goal": false,
+    "possession_id": 24,
+    "chain": [
+      {
+        "kind": "event",
+        "action_id": 127,
+        "original_event_id": "ev00175",
+        "period_id": 2,
+        "time_seconds": 30.8
+      },
+      {
+        "kind": "event",
+        "action_id": 128,
+        "original_event_id": "ev00177",
+        "period_id": 2,
+        "time_seconds": 30.8
+      },
+      {
+        "kind": "event",
+        "action_id": 129,
+        "original_event_id": "ev00178",
+        "period_id": 2,
+        "time_seconds": 33.0
+      }
+    ],
+    "chain_start": "regain",
+    "turnover_event_ref": {
+      "kind": "event",
+      "action_id": 126,
+      "original_event_id": "ev00174",
+      "period_id": 2,
+      "time_seconds": 29.7
+    },
+    "contested_action_ids": [],
+    "t_start": 23.0,
+    "t_end": 35.0,
+    "window": {
+      "period_id": 2,
+      "frame_start": 1731,
+      "frame_end": 1851,
+      "t_start": 23.0,
+      "t_end": 35.0
+    }
+  },
+  {
+    "moment_id": "SYN-0007-goal-4",
+    "type": "goal",
+    "game_id": "SYN-0007",
+    "period_id": 2,
+    "t_event": 78.0,
+    "attacking_team_id": "NBR",
+    "defending_team_id": "EPA",
+    "key_event_ref": {
+      "kind": "event",
+      "action_id": 156,
+      "original_event_id": "ev00213",
+      "period_id": 2,
+      "time_seconds": 78.0
+    },
+    "key_player_id": "NBR-09",
+    "is_own_goal": false,
+    "possession_id": 27,
+    "chain": [
+      {
+        "kind": "event",
+        "action_id": 147,
+        "original_event_id": "ev00200",
+        "period_id": 2,
+        "time_seconds": 67.9
+      },
+      {
+        "kind": "event",
+        "action_id": 148,
+        "original_event_id": "ev00202",
+        "period_id": 2,
+        "time_seconds": 69.3
+      },
+      {
+        "kind": "event",
+        "action_id": 149,
+        "original_event_id": "ev00203",
+        "period_id": 2,
+        "time_seconds": 71.3
+      },
+      {
+        "kind": "event",
+        "action_id": 150,
+        "original_event_id": "ev00204",
+        "period_id": 2,
+        "time_seconds": 72.2
+      },
+      {
+        "kind": "event",
+        "action_id": 151,
+        "original_event_id": "ev00205",
+        "period_id": 2,
+        "time_seconds": 73.9
+      },
+      {
+        "kind": "event",
+        "action_id": 152,
+        "original_event_id": "ev00206",
+        "period_id": 2,
+        "time_seconds": 74.7
+      },
+      {
+        "kind": "event",
+        "action_id": 153,
+        "original_event_id": "ev00208",
+        "period_id": 2,
+        "time_seconds": 76.7
+      },
+      {
+        "kind": "event",
+        "action_id": 154,
+        "original_event_id": "ev00209",
+        "period_id": 2,
+        "time_seconds": 77.0
+      },
+      {
+        "kind": "event",
+        "action_id": 155,
+        "original_event_id": "ev00211",
+        "period_id": 2,
+        "time_seconds": 77.4
+      },
+      {
+        "kind": "event",
+        "action_id": 156,
+        "original_event_id": "ev00213",
+        "period_id": 2,
+        "time_seconds": 78.0
+      }
+    ],
+    "chain_start": "regain",
+    "turnover_event_ref": {
+      "kind": "event",
+      "action_id": 146,
+      "original_event_id": "ev00199",
+      "period_id": 2,
+      "time_seconds": 67.3
+    },
+    "contested_action_ids": [
+      154
+    ],
+    "t_start": 66.9,
+    "t_end": 80.0,
+    "window": {
+      "period_id": 2,
+      "frame_start": 2170,
+      "frame_end": 2301,
+      "t_start": 66.9,
+      "t_end": 80.0
+    }
+  }
+]

@@ -161,15 +161,15 @@ def test_goal_near_period_end_window_is_clipped():
 
 def test_cli_lists_moments(fixture_dir):
     out = io.StringIO()
-    assert main([str(fixture_dir)], out=out) == 0
+    assert main([str(fixture_dir), "--classes", "goal"], out=out) == 0
     text = out.getvalue()
-    assert text.startswith("SYN-0007: 4 goal moment(s)")
+    assert text.startswith("SYN-0007: 4 moment(s)  goal 4")
     assert "chain: 10 actions #147..#156  from regain after ev00199" in text
     assert "window: frames 294..414 (121)" in text
 
 
 def test_cli_json(fixture_dir):
     out = io.StringIO()
-    main([str(fixture_dir), "--json"], out=out)
+    main([str(fixture_dir), "--json", "--classes", "goal"], out=out)
     data = json.loads(out.getvalue())
     assert [Moment.model_validate(d).moment_id for d in data] == [f"SYN-0007-goal-{i}" for i in range(1, 5)]
