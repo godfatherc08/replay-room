@@ -111,6 +111,7 @@ install:      .venv/Scripts/python -m pip install -e ".[dev]"     (Python 3.11-3
 run replay:   python -m replay_room.replay data/fixtures/synthetic_match_01 --speed 4
               (--start/--end take timeline seconds or pPERIOD:SECONDS, e.g. p2:30; --instant ignores wall time;
                keys: space pause, +/- speed, f/b seek 10 s, q quit)
+detect:       python -m replay_room.detect data/fixtures/synthetic_match_01 [--json] [--stream]
 gen fixture:  python -m replay_room.ingest.generator --seed 7 --out data/fixtures/synthetic_match_01
 schema:       python -m replay_room.contracts      (regenerates data/schema/causal_account.schema.json)
 test:         python -m pytest
