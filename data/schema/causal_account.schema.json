@@ -149,7 +149,8 @@
             "action_value",
             "space_creation",
             "space_conceded",
-            "marking_break"
+            "marking_break",
+            "chance_denied"
           ],
           "title": "Kind",
           "type": "string"
@@ -177,7 +178,10 @@
             "assist",
             "build_up",
             "space_creation",
-            "defensive_error"
+            "attacking_error",
+            "defensive_error",
+            "defending",
+            "prevention"
           ],
           "title": "Role",
           "type": "string"
@@ -310,6 +314,32 @@
         "time_seconds"
       ],
       "title": "EventRef",
+      "type": "object"
+    },
+    "EvidenceIndex": {
+      "additionalProperties": false,
+      "description": "Every record the account cites (the spec's ``evidence`` block), sorted.",
+      "properties": {
+        "events": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "frames": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Frames",
+          "type": "array"
+        }
+      },
+      "required": [
+        "events",
+        "frames"
+      ],
+      "title": "EvidenceIndex",
       "type": "object"
     },
     "FrameRef": {
@@ -611,6 +641,56 @@
       "title": "Moment",
       "type": "object"
     },
+    "Outcome": {
+      "additionalProperties": false,
+      "description": "What the account explains: the terminal action and its value V.",
+      "properties": {
+        "beneficiary_team_id": {
+          "title": "Beneficiary Team Id",
+          "type": "string"
+        },
+        "conceding_team_id": {
+          "title": "Conceding Team Id",
+          "type": "string"
+        },
+        "realized": {
+          "title": "Realized",
+          "type": "boolean"
+        },
+        "ref": {
+          "$ref": "#/$defs/EventRef"
+        },
+        "scored": {
+          "title": "Scored",
+          "type": "boolean"
+        },
+        "value": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Value",
+          "type": "number"
+        },
+        "value_source": {
+          "enum": [
+            "xg",
+            "xt"
+          ],
+          "title": "Value Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "value",
+        "value_source",
+        "scored",
+        "realized",
+        "beneficiary_team_id",
+        "conceding_team_id"
+      ],
+      "title": "Outcome",
+      "type": "object"
+    },
     "Participant": {
       "additionalProperties": false,
       "properties": {
@@ -671,8 +751,16 @@
           "type": "number"
         },
         "generated_at": {
-          "title": "Generated At",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generated At"
         },
         "models": {
           "additionalProperties": {
@@ -694,8 +782,7 @@
         "pipeline_version",
         "source",
         "effect_threshold",
-        "counterfactual_margin",
-        "generated_at"
+        "counterfactual_margin"
       ],
       "title": "Provenance",
       "type": "object"
@@ -776,6 +863,9 @@
       "title": "Counterfactuals",
       "type": "array"
     },
+    "evidence": {
+      "$ref": "#/$defs/EvidenceIndex"
+    },
     "game_id": {
       "title": "Game Id",
       "type": "string"
@@ -786,6 +876,9 @@
     },
     "moment": {
       "$ref": "#/$defs/Moment"
+    },
+    "outcome": {
+      "$ref": "#/$defs/Outcome"
     },
     "participants": {
       "items": {
@@ -799,8 +892,8 @@
       "$ref": "#/$defs/Provenance"
     },
     "schema_version": {
-      "const": "0.4",
-      "default": "0.4",
+      "const": "0.5",
+      "default": "0.5",
       "title": "Schema Version",
       "type": "string"
     },
@@ -823,10 +916,12 @@
     "account_id",
     "game_id",
     "moment",
+    "outcome",
     "teams",
     "participants",
     "headline_contribution_id",
     "contributions",
+    "evidence",
     "provenance"
   ],
   "title": "CausalAccount",

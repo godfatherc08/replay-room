@@ -49,6 +49,8 @@ def _account(**overrides):
         "account_id": "acc-1",
         "game_id": "g1",
         "moment": _moment(),
+        "outcome": {"ref": _ref(42, 101.3), "value": 0.41, "value_source": "xg", "scored": True, "realized": True,
+                    "beneficiary_team_id": "HOM", "conceding_team_id": "AWY"},
         "teams": [{"team_id": "HOM", "name": "Home FC"}, {"team_id": "AWY", "name": "Away FC"}],
         "participants": [
             {"player_id": "HOM-07", "name": "A Seven", "team_id": "HOM"},
@@ -94,6 +96,7 @@ def _account(**overrides):
                 ],
             }
         ],
+        "evidence": {"events": [41, 42], "frames": [990, 994, 1013]},
         "provenance": {
             "pipeline_version": "0.1.0",
             "source": "synthetic-v1",
@@ -116,7 +119,7 @@ def test_causal_account_valid_roundtrip():
     account = CausalAccount.model_validate(_account())
     assert account.headline.signal == "stopped_tracking_runner"
     assert account.counterfactuals[0].best_gap == pytest.approx(0.14)
-    assert account.evidence_index() == {"events": [41, 42], "frames": [990, 994, 1013]}
+    assert account.evidence_index() == {"events": (41, 42), "frames": (990, 994, 1013)}
     again = CausalAccount.model_validate_json(account.model_dump_json())
     assert again == account
 
@@ -138,6 +141,11 @@ def test_causal_account_valid_roundtrip():
         (lambda d: d["counterfactuals"][0]["alternatives"].append(
             {"description": "shoot far post", "value": 0.6, "evidence": [_frame(1013)]}), "best first"),
         (lambda d: d["participants"].pop(), "participants"),
+        (lambda d: d["outcome"].update(ref=_ref(41, 99.8)), "outcome must match"),
+        (lambda d: d["outcome"].update(beneficiary_team_id="AWY", conceding_team_id="HOM"), "outcome must match"),
+        (lambda d: d["outcome"].update(realized=False), "denied the chance"),
+        (lambda d: d["contributions"][1].update(evidence=[_frame(2000, "HOM-07")]), "outside the moment window"),
+        (lambda d: d["evidence"].update(frames=[990, 994]), "exactly the records"),
         (lambda d: d["teams"][1].update(team_id="XYZ"), "teams"),
     ],
 )

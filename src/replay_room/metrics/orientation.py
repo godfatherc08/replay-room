@@ -35,12 +35,14 @@ class LtrActions:
     home_team_id: str
 
 
-def orient(actions: pd.DataFrame, home_team_id: str) -> LtrActions:
+def orient(actions: pd.DataFrame, home_team_id: str, check_home: bool = True) -> LtrActions:
+    """``check_home=False`` for tables of one team's hypothetical actions (e.g. the
+    options a counterfactual values), where the home team may rightly be absent."""
     if isinstance(actions, LtrActions):
         raise TypeError("actions are already oriented left-to-right")
     if not isinstance(actions, pd.DataFrame):
         raise TypeError(f"expected a SPADL DataFrame, got {type(actions).__name__}")
-    if home_team_id not in set(actions["team_id"]):
+    if check_home and home_team_id not in set(actions["team_id"]):
         raise ValueError(f"home team {home_team_id!r} has no actions; wrong home_team_id?")
     ltr = play_left_to_right(actions.copy(), home_team_id)
     away = actions["team_id"] != home_team_id

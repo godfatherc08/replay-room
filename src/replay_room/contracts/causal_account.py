@@ -1,15 +1,27 @@
-"""Causal-account contract (schema v0.4), per REPLAY_ROOM_TECHNICAL_SPEC.md section 4.
+"""Causal-account contract (schema v0.5), per REPLAY_ROOM_TECHNICAL_SPEC.md section 4.
 
 The causal account is the single contract between the deterministic core
-(stage 4 produces it) and everything downstream (stages 5, 6 and 7 consume it).
-Only the types live here; nothing produces accounts until Build 4.
+(stage 4, ``replay_room.attribution``, produces it) and everything downstream
+(stages 5, 6 and 7 consume it). Only the types live here.
+
+**The outcome.** An account explains ``outcome.value`` (V): the ex-ante value
+of the moment's terminal action (``Moment.outcome_ref``; its xG for a shot),
+never a hard-coded "goal = 1". ``outcome.realized`` sets the framing:
+
+* realized (``True``): the story is how V was built. It is realized when the
+  terminal action scored, or when it was never a big chance (a turnover's
+  speculative shot still *happened*);
+* prevented (``False``): a big chance that did not score, "a goal that didn't
+  happen". The account then also carries the ``chance_denied`` fact (effect
+  ``-V``) for the save, block or miss that denied it, and that fact is the
+  headline.
 
 The account is **self-contained**: stage 6 may narrate only what is in it, so
 every fact carries its own words (``role``, plus ``action`` for on-ball or
 ``signal`` for off-ball), and every player it mentions is in ``participants``.
 
-Sign convention: ``effect`` is the marginal change in the *attacking* (scoring)
-team's goal probability. A creator's pass and a defender's lapse both have a
+Sign convention: ``effect`` is the marginal change in the *attacking* team's
+(the beneficiary's) probability of realising the outcome. A creator's pass and a defender's lapse both have a
 positive effect; a defending player with a positive effect is a debit to the
 defending team (the spec's "top negative for the conceding team"). Club-focus
 views flip the sign; the account does not.
@@ -18,6 +30,11 @@ Invariants enforced on construction:
 
 * the moment is ``engine_eligible`` (an explained class): flagged moments
   such as offsides or substitutions never get an account;
+* ``outcome`` agrees with the moment (same terminal action, same teams);
+  a prevented account's headline is a ``chance_denied`` contribution;
+* every frame reference lies inside the moment's tracking window;
+* ``evidence`` lists exactly the records the contributions and
+  counterfactuals cite;
 * every contribution carries an evidence reference matching its track
   (``on_ball`` -> event, ``off_ball`` -> frame) and its label
   (``action`` for on-ball, ``signal`` for off-ball);
@@ -35,7 +52,10 @@ added ``period_id`` to event refs. v0.3 aligns with spec section 4: ``role``,
 (decision frame + margin), and ``teams``/``participants``. v0.4 embeds the
 class-agnostic ``Moment`` (``type`` over explained + flagged classes,
 ``engine_eligible``, the terminal ``outcome_ref`` whose value the account
-attributes over) and accepts only engine-eligible moments.
+attributes over) and accepts only engine-eligible moments. v0.5 (Build 4)
+adds ``outcome``, the ``evidence`` index, roles ``prevention`` /
+``attacking_error`` / ``defending``, kind ``chance_denied``, the in-window frame
+check, and makes ``generated_at`` optional so accounts are reproducible.
 
 The JSON Schema export lives at ``data/schema/causal_account.schema.json`` and
 is regenerated with ``python -m replay_room.contracts``.
@@ -50,9 +70,9 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from replay_room.contracts.moment import Moment
-from replay_room.contracts.refs import EvidenceRef, FrameRef, _Model
+from replay_room.contracts.refs import EventRef, EvidenceRef, FrameRef, _Model
 
-SCHEMA_VERSION = "0.4"
+SCHEMA_VERSION = "0.5"
 
 
 ContributionKind = Literal[
@@ -62,6 +82,8 @@ ContributionKind = Literal[
     "space_creation",  # pitch-control / space-value gained by a movement
     "space_conceded",  # pitch-control / space-value given up by a defender
     "marking_break",  # a marking assignment that was lost
+    # prevented outcomes
+    "chance_denied",  # the save, block or miss that took V away (effect -V)
 ]
 ContributionRole = Literal[
     "primary_cause",  # the headline cause
@@ -69,8 +91,30 @@ ContributionRole = Literal[
     "assist",  # the action that set up the finish
     "build_up",  # other positive on-ball contributions by the attacking team
     "space_creation",  # off-ball movement that opened valuable space
-    "defensive_error",  # a defending player's action or positioning that helped the goal
+    "attacking_error",  # an attacking action that cost the attack value on the way
+    "defensive_error",  # a defending player's action or positioning that helped the attack
+    "defending",  # a defending action that reduced the attack's chances, without stopping it
+    "prevention",  # the defending action (or the miss) that denied a prevented outcome
 ]
+
+
+class Outcome(_Model):
+    """What the account explains: the terminal action and its value V."""
+
+    ref: EventRef  # == moment.outcome_ref
+    value: float = Field(ge=0.0, le=1.0)  # V: ex-ante P(goal) of the terminal action
+    value_source: Literal["xg", "xt"]  # xG for shots; the attacking team's xT there otherwise (own goals)
+    scored: bool  # the realised result (== moment.outcome_scored)
+    realized: bool  # framing: False = prevented ("a goal that didn't happen")
+    beneficiary_team_id: str  # the attacking team
+    conceding_team_id: str  # the defending team
+
+
+class EvidenceIndex(_Model):
+    """Every record the account cites (the spec's ``evidence`` block), sorted."""
+
+    events: tuple[int, ...]  # action ids
+    frames: tuple[int, ...]  # frame ids
 
 
 class TeamInfo(_Model):
@@ -161,25 +205,31 @@ class Provenance(_Model):
     models: dict[str, str] = Field(default_factory=dict)  # metric -> model/version
     effect_threshold: float
     counterfactual_margin: float
-    generated_at: str  # ISO-8601
+    generated_at: str | None = None  # ISO-8601; stamped when persisted, not when computed
 
 
 class CausalAccount(_Model):
-    schema_version: Literal["0.4"] = SCHEMA_VERSION
+    schema_version: Literal["0.5"] = SCHEMA_VERSION
     account_id: str
     game_id: str
     moment: Moment
+    outcome: Outcome
     teams: tuple[TeamInfo, TeamInfo]
     participants: tuple[Participant, ...] = Field(min_length=1)
     headline_contribution_id: str
     contributions: tuple[Contribution, ...] = Field(min_length=1)
     counterfactuals: tuple[Counterfactual, ...] = ()
+    evidence: EvidenceIndex
     provenance: Provenance
 
     @model_validator(mode="after")
     def _check_integrity(self) -> CausalAccount:
         if not self.moment.engine_eligible:
             raise ValueError(f"{self.moment.type} moments are flagged, not explained: no causal account")
+        out, m = self.outcome, self.moment
+        if (out.ref, out.scored) != (m.outcome_ref, m.outcome_scored) or \
+                (out.beneficiary_team_id, out.conceding_team_id) != (m.attacking_team_id, m.defending_team_id):
+            raise ValueError("outcome must match the moment's terminal action and teams")
         ranks = [c.rank for c in self.contributions]
         if ranks != list(range(1, len(ranks) + 1)):
             raise ValueError(f"contributions must be ordered by rank 1..n, got {ranks}")
@@ -211,21 +261,31 @@ class CausalAccount(_Model):
             raise ValueError(f"players not in participants: {sorted(mentioned - players)}")
         if not {p.team_id for p in self.participants} <= team_ids:
             raise ValueError("participant on an unknown team")
+        if not self.outcome.realized and self.headline.kind != "chance_denied":
+            raise ValueError("a prevented account's headline is the fact that denied the chance")
+        w = self.moment.window
+        frames = [r for c in self.contributions for r in c.evidence if r.kind == "frame"]
+        frames += [cf.decision_frame for cf in self.counterfactuals]
+        frames += [r for cf in self.counterfactuals for a in cf.alternatives for r in a.evidence if r.kind == "frame"]
+        if any(not w.frame_start <= r.frame_id <= w.frame_end for r in frames):
+            raise ValueError(f"frame reference outside the moment window {w.frame_start}..{w.frame_end}")
+        if self.evidence.model_dump() != self.evidence_index():
+            raise ValueError("evidence must list exactly the records the account cites")
         return self
 
     @property
     def headline(self) -> Contribution:
         return next(c for c in self.contributions if c.contribution_id == self.headline_contribution_id)
 
-    def evidence_index(self) -> dict[str, list[int]]:
+    def evidence_index(self) -> dict[str, tuple[int, ...]]:
         """Every cited record (the spec's ``evidence`` block): action ids and frame ids, sorted."""
         refs = [r for c in self.contributions for r in c.evidence]
         for cf in self.counterfactuals:
             refs.append(cf.decision_frame)
             refs += [r for a in cf.alternatives for r in a.evidence]
         return {
-            "events": sorted({r.action_id for r in refs if r.kind == "event"}),
-            "frames": sorted({r.frame_id for r in refs if r.kind == "frame"}),
+            "events": tuple(sorted({r.action_id for r in refs if r.kind == "event"})),
+            "frames": tuple(sorted({r.frame_id for r in refs if r.kind == "frame"})),
         }
 
 

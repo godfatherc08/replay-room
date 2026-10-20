@@ -115,6 +115,8 @@ detect:       python -m replay_room.detect data/fixtures/synthetic_match_01 [--c
               (default: the explained classes goal, turnover_to_shot, big_chance_saved, penalty; --stream is goals only)
 train:        python -m replay_room.metrics.train      (builds/caches the 200-match corpus in data/corpus/, writes data/models/)
 metrics:      python -m replay_room.metrics data/fixtures/synthetic_match_01 [--frame-every 5]
+attribute:    python -m replay_room.attribution data/fixtures/synthetic_match_01 [--classes ...] [--json] [--save [DIR]]
+              (one CausalAccount per engine-eligible moment; --save writes data/accounts/<game>/<moment>.json)
 gen fixture:  python -m replay_room.ingest.generator --seed 7 --out data/fixtures/synthetic_match_01
 schema:       python -m replay_room.contracts      (regenerates data/schema/causal_account.schema.json)
 test:         python -m pytest
