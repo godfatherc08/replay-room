@@ -1,0 +1,4 @@
+# Fixtures must stay byte-identical to what the seeded generator writes.
+data/fixtures/**/*.json text eol=lf
+data/fixtures/**/*.jsonl text eol=lf
+*.gz binary
