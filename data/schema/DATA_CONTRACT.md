@@ -27,6 +27,10 @@ Columns `game_id, original_event_id, action_id, period_id, time_seconds, team_id
 
 The challenge asks us to ingest pressure events, possession changes and match metadata. SPADL has no type for these, so they go in `ContextEvent` with `kind` ∈ `period_start, period_end, pressure, possession_change, ball_out_of_play`. `player_id` is the actor (e.g. the presser) and `target_player_id` is the player acted on (the pressed carrier).
 
+### Pass targets (not SPADL)
+
+`Match.pass_targets`: a Series `action_id → intended_receiver_id` for every pass/cross whose raw record names the player it was aimed at, **completed or not**. SPADL has no such field (and its schema is strict), so it sits beside the table. It can be empty. The pass-completion model needs it: SPADL's end point for a failed pass is the interception point, and a receiver inferred from it leaks the outcome (see `metrics/pass_value.py`). `synthetic-v1` maps raw `recipient` to it.
+
 ### Tracking table
 
 Columns `frame_id, period_id, timestamp, player_id, team_id, x, y, vx, vy`. There is one row per object per frame: all 22 players plus the ball, whose `player_id` and `team_id` are both `"ball"`. `frame_id` is unique across the match and is the **off-ball evidence key**. **Positions and velocities are both present** and are observed, not modelled. Velocities agree with frame-to-frame displacement (tested). Tracking may sit slightly off the pitch: players up to ~1 m, the ball up to ~2.5 m behind the goal line (in the net, or out for a goal kick). SPADL locations are clipped and tracking is not.
@@ -75,6 +79,7 @@ Body part: `right_foot → foot_right`, `left_foot → foot_left`, `head → hea
 - [ ] Frame rate (10 / 25 Hz?), timestamp format, time origin per period vs whole match
 - [ ] Are velocities supplied, or must they be derived (and smoothed)? Ball z present?
 - [ ] Event taxonomy → SPADL mapping table (pressure? duels? carries supplied or inferred?)
+- [ ] Do passes name their intended receiver, **including incomplete passes**? (Needed to retrain the pass model without leaking the outcome.)
 - [ ] ID types and how event player ids join to tracking object ids
 - [ ] Event timestamps vs tracking timestamps: same clock? any offset?
 - [ ] Missing frames or objects (players off screen / subbed), and how they are encoded

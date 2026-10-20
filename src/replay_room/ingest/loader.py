@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
@@ -22,6 +22,8 @@ class Match:
     actions: pd.DataFrame
     context: tuple[ContextEvent, ...]
     tracking: pd.DataFrame
+    # action_id -> intended receiver named by the feed (see AdaptedFeed); may be empty
+    pass_targets: pd.Series = field(default_factory=lambda: pd.Series(dtype=object, name="intended_receiver_id"))
 
     def iter_actions(self) -> Iterator[SpadlAction]:
         for row in self.actions.itertuples(index=False):
@@ -55,4 +57,5 @@ def load_match(path: str | Path, adapter: FeedAdapter | None = None) -> Match:
     path = Path(path)
     adapter = adapter or detect_adapter(path)
     feed = adapter.read(path)
-    return Match(meta=feed.meta, actions=feed.actions, context=feed.context, tracking=feed.tracking)
+    return Match(meta=feed.meta, actions=feed.actions, context=feed.context, tracking=feed.tracking,
+                 pass_targets=feed.pass_targets)

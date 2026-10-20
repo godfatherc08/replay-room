@@ -112,6 +112,8 @@ run replay:   python -m replay_room.replay data/fixtures/synthetic_match_01 --sp
               (--start/--end take timeline seconds or pPERIOD:SECONDS, e.g. p2:30; --instant ignores wall time;
                keys: space pause, +/- speed, f/b seek 10 s, q quit)
 detect:       python -m replay_room.detect data/fixtures/synthetic_match_01 [--json] [--stream]
+train:        python -m replay_room.metrics.train      (builds/caches the 200-match corpus in data/corpus/, writes data/models/)
+metrics:      python -m replay_room.metrics data/fixtures/synthetic_match_01 [--frame-every 5]
 gen fixture:  python -m replay_room.ingest.generator --seed 7 --out data/fixtures/synthetic_match_01
 schema:       python -m replay_room.contracts      (regenerates data/schema/causal_account.schema.json)
 test:         python -m pytest

@@ -1,0 +1,128 @@
+{
+  "corpus": "c2-g1-n200-s1000",
+  "n_games": 200,
+  "split": {
+    "train": 120,
+    "tune": 40,
+    "test": 40
+  },
+  "sklearn": "1.9.1",
+  "xg": {
+    "n": 568,
+    "auc": 0.6568550497121926,
+    "log_loss": 0.38092321577113153,
+    "log_loss_base": 0.4000757670960148,
+    "brier": 0.11500872650395672,
+    "brier_base": 0.11846607815909538,
+    "passed": true
+  },
+  "pass": {
+    "n": 3519,
+    "auc": 0.7986835671155504,
+    "log_loss": 0.3851738718159837,
+    "log_loss_base": 0.469916594593575,
+    "brier": 0.12241349374796123,
+    "brier_base": 0.1469770605896089,
+    "passed": true
+  },
+  "vaep": {
+    "scores": {
+      "auc": 0.7361195363217201,
+      "brier": 0.06530864719185168,
+      "brier_base": 0.07595641135813976,
+      "brier_skill": 0.1401825596536298,
+      "positive_rate": 0.08281468309411914
+    },
+    "concedes": {
+      "auc": 0.8139970305259395,
+      "brier": 0.01491517317408766,
+      "brier_base": 0.015255872999360853,
+      "brier_skill": 0.022332371624191327,
+      "positive_rate": 0.015495998983868919
+    },
+    "passed": true,
+    "chosen_params": {
+      "scores": {
+        "max_iter": 100,
+        "learning_rate": 0.05,
+        "max_leaf_nodes": 7,
+        "min_samples_leaf": 200,
+        "l2_regularization": 1.0
+      },
+      "concedes": {
+        "max_iter": 100,
+        "learning_rate": 0.05,
+        "max_leaf_nodes": 7,
+        "min_samples_leaf": 200,
+        "l2_regularization": 1.0
+      }
+    },
+    "tuning": {
+      "scores": [
+        {
+          "params": {
+            "max_iter": 300,
+            "learning_rate": 0.05,
+            "max_leaf_nodes": 31,
+            "min_samples_leaf": 40
+          },
+          "tune_brier": 0.0683053511069772
+        },
+        {
+          "params": {
+            "max_iter": 150,
+            "learning_rate": 0.05,
+            "max_leaf_nodes": 15,
+            "min_samples_leaf": 100
+          },
+          "tune_brier": 0.06679096336455044
+        },
+        {
+          "params": {
+            "max_iter": 100,
+            "learning_rate": 0.05,
+            "max_leaf_nodes": 7,
+            "min_samples_leaf": 200,
+            "l2_regularization": 1.0
+          },
+          "tune_brier": 0.06614733954730485
+        }
+      ],
+      "concedes": [
+        {
+          "params": {
+            "max_iter": 300,
+            "learning_rate": 0.05,
+            "max_leaf_nodes": 31,
+            "min_samples_leaf": 40
+          },
+          "tune_brier": 0.014466723365173278
+        },
+        {
+          "params": {
+            "max_iter": 150,
+            "learning_rate": 0.05,
+            "max_leaf_nodes": 15,
+            "min_samples_leaf": 100
+          },
+          "tune_brier": 0.014040232933034642
+        },
+        {
+          "params": {
+            "max_iter": 100,
+            "learning_rate": 0.05,
+            "max_leaf_nodes": 7,
+            "min_samples_leaf": 200,
+            "l2_regularization": 1.0
+          },
+          "tune_brier": 0.01399608664647389
+        }
+      ]
+    },
+    "criteria": {
+      "min_auc": 0.7,
+      "min_brier_skill": 0.0
+    }
+  },
+  "on_ball_signal": "vaep"
+}

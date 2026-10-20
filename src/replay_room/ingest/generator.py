@@ -663,13 +663,19 @@ def _build_feed(sim: _Sim, seed: int, attempt: int, period_seconds: float) -> Sy
     return SyntheticMatch(meta=meta, events=events, tracking=tracking)
 
 
-def generate_match(seed: int = 7, period_seconds: float = 150.0, n_periods: int = 2) -> SyntheticMatch:
-    """Simulate a match; deterministic in ``(seed, period_seconds, n_periods)``."""
+def generate_match(
+    seed: int = 7, period_seconds: float = 150.0, n_periods: int = 2, require_goal_buildup: bool = True
+) -> SyntheticMatch:
+    """Simulate a match; deterministic in its arguments.
+
+    ``require_goal_buildup=False`` keeps attempt 0 whatever happens in it: use it
+    for training corpora, where retrying until a goal would bias the data.
+    """
     for attempt in range(MAX_ATTEMPTS):
         rng = np.random.default_rng([seed, attempt])
         sim = _Sim(rng, period_seconds, n_periods)
         sim.run()
-        if _has_goal_with_buildup(sim.events):
+        if not require_goal_buildup or _has_goal_with_buildup(sim.events):
             return _build_feed(sim, seed, attempt, period_seconds)
     raise RuntimeError(f"no goal with build-up in {MAX_ATTEMPTS} attempts for seed {seed}")
 

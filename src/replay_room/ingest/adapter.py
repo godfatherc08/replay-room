@@ -10,7 +10,7 @@ changes.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -30,6 +30,9 @@ class AdaptedFeed:
     actions: pd.DataFrame  # SPADL_COLUMNS, validated against socceraction's SPADLSchema
     context: tuple[ContextEvent, ...]
     tracking: pd.DataFrame  # TRACKING_COLUMNS
+    # action_id -> player the feed says a pass/cross was aimed at, for every pass that names one
+    # (completed or not). Not part of SPADL; empty if the feed has no such field.
+    pass_targets: pd.Series = field(default_factory=lambda: pd.Series(dtype=object, name="intended_receiver_id"))
 
 
 class FeedAdapter(Protocol):
@@ -87,7 +90,16 @@ class SyntheticFeedAdapter:
             raw_events = [json.loads(line) for line in fh if line.strip()]
         actions, context = self._events(raw_events, meta, flips)
         tracking = self._tracking(pd.read_csv(path / "tracking.csv.gz"), flips)
-        return AdaptedFeed(meta=meta, actions=actions, context=context, tracking=tracking)
+        return AdaptedFeed(meta=meta, actions=actions, context=context, tracking=tracking,
+                           pass_targets=self._pass_targets(raw_events, actions))
+
+    @staticmethod
+    def _pass_targets(raw_events: list[dict[str, Any]], actions: pd.DataFrame) -> pd.Series:
+        recipients = {ev["id"]: ev["recipient"] for ev in raw_events if ev.get("recipient")}
+        passes = actions[actions["type_name"].isin(["pass", "cross"])]
+        targets = passes["original_event_id"].map(recipients)
+        targets.index = passes["action_id"].to_numpy()
+        return targets.dropna().rename("intended_receiver_id")
 
     def _meta(self, raw: dict[str, Any]) -> MatchMeta:
         pitch = raw["pitch"]

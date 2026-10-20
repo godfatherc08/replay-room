@@ -29,6 +29,13 @@ OnBallSignal = Literal["vaep", "xt_delta"]
 
 @dataclass(frozen=True)
 class ValuedAction:
+    """All values are from the perspective of the team performing the action.
+
+    Inside a goal's chain, contested touches by the defending team therefore
+    carry *their* team's value; Build 4 converts to the account's convention
+    (effect on the attacking team's goal probability).
+    """
+
     action: SpadlAction  # canonical (absolute) coordinates, as ingested
     value: float | None  # authoritative on-ball value (see ValuedMoment.on_ball_signal); None if undefined
     xt_start: float | None = None  # xT of the start cell, acting team's perspective
@@ -58,6 +65,7 @@ class PitchControlSurface:
     y: np.ndarray = field(repr=False)  # cell centres along the width, metres
     control: np.ndarray = field(repr=False)  # shape (len(y), len(x)), values in [0, 1]
     control_share: float = 0.0  # mean control over the pitch
+    box_control: float = 0.0  # mean control inside the opponent's penalty area
     space_value: float = 0.0  # xT-weighted control: share of the pitch's threat this team controls
 
     def at(self, x: float, y: float) -> float:

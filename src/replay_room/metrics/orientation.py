@@ -21,6 +21,11 @@ from dataclasses import dataclass
 import pandas as pd
 from socceraction.spadl import play_left_to_right
 
+from replay_room.contracts.pitch import PITCH_LENGTH, PITCH_WIDTH
+
+# Extra (x, y) columns that orient() flips like start/end (see metrics.pass_value).
+EXTRA_POINTS = (("intended_end_x", "intended_end_y"),)
+
 
 @dataclass(frozen=True)
 class LtrActions:
@@ -37,7 +42,13 @@ def orient(actions: pd.DataFrame, home_team_id: str) -> LtrActions:
         raise TypeError(f"expected a SPADL DataFrame, got {type(actions).__name__}")
     if home_team_id not in set(actions["team_id"]):
         raise ValueError(f"home team {home_team_id!r} has no actions; wrong home_team_id?")
-    return LtrActions(play_left_to_right(actions.copy(), home_team_id), home_team_id)
+    ltr = play_left_to_right(actions.copy(), home_team_id)
+    away = actions["team_id"] != home_team_id
+    for x, y in EXTRA_POINTS:  # metric-layer locations ride along with the action
+        if x in ltr:
+            ltr.loc[away, x] = PITCH_LENGTH - actions.loc[away, x]
+            ltr.loc[away, y] = PITCH_WIDTH - actions.loc[away, y]
+    return LtrActions(ltr, home_team_id)
 
 
 def require_ltr(actions: object) -> pd.DataFrame:
