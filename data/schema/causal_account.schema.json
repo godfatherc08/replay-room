@@ -1,0 +1,430 @@
+{
+  "$defs": {
+    "Alternative": {
+      "additionalProperties": false,
+      "description": "An option that was actually available, valued from the real positions.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "event": "#/$defs/EventRef",
+                "frame": "#/$defs/FrameRef"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EventRef"
+              },
+              {
+                "$ref": "#/$defs/FrameRef"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "target_player_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Player Id"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "description",
+        "value",
+        "evidence"
+      ],
+      "title": "Alternative",
+      "type": "object"
+    },
+    "Contribution": {
+      "additionalProperties": false,
+      "description": "One evidence-bound causal fact, kept because its effect cleared the threshold.",
+      "properties": {
+        "contribution_id": {
+          "title": "Contribution Id",
+          "type": "string"
+        },
+        "effect": {
+          "title": "Effect",
+          "type": "number"
+        },
+        "evidence": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "event": "#/$defs/EventRef",
+                "frame": "#/$defs/FrameRef"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EventRef"
+              },
+              {
+                "$ref": "#/$defs/FrameRef"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "action_value",
+            "space_creation",
+            "space_conceded",
+            "marking_break"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Metrics",
+          "type": "object"
+        },
+        "player_id": {
+          "title": "Player Id",
+          "type": "string"
+        },
+        "rank": {
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "shapley_share": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shapley Share"
+        },
+        "t": {
+          "title": "T",
+          "type": "number"
+        },
+        "team_id": {
+          "title": "Team Id",
+          "type": "string"
+        },
+        "track": {
+          "enum": [
+            "on_ball",
+            "off_ball"
+          ],
+          "title": "Track",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contribution_id",
+        "rank",
+        "track",
+        "kind",
+        "player_id",
+        "team_id",
+        "t",
+        "effect",
+        "evidence"
+      ],
+      "title": "Contribution",
+      "type": "object"
+    },
+    "Counterfactual": {
+      "additionalProperties": false,
+      "properties": {
+        "alternatives": {
+          "items": {
+            "$ref": "#/$defs/Alternative"
+          },
+          "minItems": 1,
+          "title": "Alternatives",
+          "type": "array"
+        },
+        "chosen_value": {
+          "title": "Chosen Value",
+          "type": "number"
+        },
+        "contribution_id": {
+          "title": "Contribution Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contribution_id",
+        "chosen_value",
+        "alternatives"
+      ],
+      "title": "Counterfactual",
+      "type": "object"
+    },
+    "EventRef": {
+      "additionalProperties": false,
+      "description": "Points at one on-ball SPADL action.",
+      "properties": {
+        "action_id": {
+          "title": "Action Id",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "event",
+          "default": "event",
+          "title": "Kind",
+          "type": "string"
+        },
+        "original_event_id": {
+          "title": "Original Event Id",
+          "type": "string"
+        },
+        "time_seconds": {
+          "title": "Time Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "action_id",
+        "original_event_id",
+        "time_seconds"
+      ],
+      "title": "EventRef",
+      "type": "object"
+    },
+    "FrameRef": {
+      "additionalProperties": false,
+      "description": "Points at one tracking frame, optionally naming the players that matter in it.",
+      "properties": {
+        "frame_id": {
+          "title": "Frame Id",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "frame",
+          "default": "frame",
+          "title": "Kind",
+          "type": "string"
+        },
+        "player_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Player Ids",
+          "type": "array"
+        },
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "number"
+        }
+      },
+      "required": [
+        "frame_id",
+        "timestamp"
+      ],
+      "title": "FrameRef",
+      "type": "object"
+    },
+    "Moment": {
+      "additionalProperties": false,
+      "properties": {
+        "chain_action_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Chain Action Ids",
+          "type": "array"
+        },
+        "key_action_id": {
+          "title": "Key Action Id",
+          "type": "integer"
+        },
+        "key_player_id": {
+          "title": "Key Player Id",
+          "type": "string"
+        },
+        "moment_id": {
+          "title": "Moment Id",
+          "type": "string"
+        },
+        "moment_type": {
+          "const": "goal",
+          "title": "Moment Type",
+          "type": "string"
+        },
+        "period_id": {
+          "title": "Period Id",
+          "type": "integer"
+        },
+        "t_event": {
+          "title": "T Event",
+          "type": "number"
+        },
+        "team_id": {
+          "title": "Team Id",
+          "type": "string"
+        },
+        "window": {
+          "$ref": "#/$defs/TrackingWindow"
+        }
+      },
+      "required": [
+        "moment_id",
+        "moment_type",
+        "period_id",
+        "t_event",
+        "team_id",
+        "key_action_id",
+        "key_player_id",
+        "chain_action_ids",
+        "window"
+      ],
+      "title": "Moment",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "effect_threshold": {
+          "title": "Effect Threshold",
+          "type": "number"
+        },
+        "generated_at": {
+          "title": "Generated At",
+          "type": "string"
+        },
+        "models": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Models",
+          "type": "object"
+        },
+        "pipeline_version": {
+          "title": "Pipeline Version",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pipeline_version",
+        "source",
+        "effect_threshold",
+        "generated_at"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "TrackingWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "frame_end": {
+          "title": "Frame End",
+          "type": "integer"
+        },
+        "frame_start": {
+          "title": "Frame Start",
+          "type": "integer"
+        },
+        "t_end": {
+          "title": "T End",
+          "type": "number"
+        },
+        "t_start": {
+          "title": "T Start",
+          "type": "number"
+        }
+      },
+      "required": [
+        "frame_start",
+        "frame_end",
+        "t_start",
+        "t_end"
+      ],
+      "title": "TrackingWindow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "title": "Account Id",
+      "type": "string"
+    },
+    "contributions": {
+      "items": {
+        "$ref": "#/$defs/Contribution"
+      },
+      "minItems": 1,
+      "title": "Contributions",
+      "type": "array"
+    },
+    "counterfactuals": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Counterfactual"
+      },
+      "title": "Counterfactuals",
+      "type": "array"
+    },
+    "game_id": {
+      "title": "Game Id",
+      "type": "string"
+    },
+    "headline_contribution_id": {
+      "title": "Headline Contribution Id",
+      "type": "string"
+    },
+    "moment": {
+      "$ref": "#/$defs/Moment"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "schema_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_id",
+    "game_id",
+    "moment",
+    "headline_contribution_id",
+    "contributions",
+    "provenance"
+  ],
+  "title": "CausalAccount",
+  "type": "object"
+}

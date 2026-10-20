@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "replay-room"
+version = "0.1.0"
+description = "Moment-first, explainable 3D match intelligence (Microsoft x Premier League 'Inside the Game')."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "numpy>=1.26,<2",
+    "pandas>=2.1,<3",
+    "pydantic>=2.6,<3",
+    "socceraction==1.5.3",
+    # socceraction 1.5.3 pins pandera 0.17, which breaks on multimethod>=2.
+    "multimethod<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+replay = "replay_room.replay.__main__:main"
+replay-gen = "replay_room.ingest.generator:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning:multimethod", "ignore::DeprecationWarning:pandera"]
