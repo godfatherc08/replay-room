@@ -4,6 +4,7 @@ import warnings
 import pytest
 
 from replay_room.attribution.engine import attribute_match
+from replay_room.explain import narrate
 from replay_room.ingest.loader import Match
 from replay_room.render import bundle_path, export_moment, write_bundles
 from replay_room.render.export import BUNDLE_VERSION, dumps
@@ -18,7 +19,7 @@ def accounts(match):
 
 @pytest.fixture(scope="module")
 def bundles(accounts, match):
-    return {a.moment.moment_id: export_moment(a, match) for a in accounts}
+    return {a.moment.moment_id: export_moment(a, match, narrate(a, "template"), accounts) for a in accounts}
 
 
 def test_bundle_is_self_contained(bundles, accounts):
@@ -107,6 +108,46 @@ def test_deterministic_and_written_next_to_the_account(accounts, match, tmp_path
     again = write_bundles(accounts[:2], match, tmp_path)
     assert [p.read_text(encoding="utf-8") for p in again] == text
     assert first[0] == bundle_path(accounts[0], tmp_path) == tmp_path / "SYN-0007" / f"{accounts[0].moment.moment_id}.bundle.json"
-    assert text[0] == dumps(export_moment(accounts[0], match))
+    assert text[0] == dumps(export_moment(accounts[0], match, None, accounts[:2]))
     index = json.loads((tmp_path / "index.json").read_text(encoding="utf-8"))
     assert [e["bundle"] for e in index] == sorted(p.relative_to(tmp_path).as_posix() for p in first)
+
+
+def test_match_header_fields(bundles, match):
+    b = bundles["SYN-0007-goal-4"]  # NBR's goal at 2nd-half 78.0 s: EPA scored three before it
+    assert b["match"]["home"] == {"team_id": "NBR", "name": "Northbridge FC", "short_name": "NBR"}
+    assert b["match"]["score_before"] == {"home": 0, "away": 3}
+    assert b["match"]["period_offset_s"] == 150.0 and b["match"]["duration_s"] == 300.0
+    assert b["match"]["moment_clock"] == "03:48"  # 150 + 78.0 s
+    first = bundles["SYN-0007-turnover_to_shot-1"]
+    assert first["match"]["score_before"] == {"home": 0, "away": 0}
+    keepers = set(b["goalkeepers"])
+    assert keepers == {p["player_id"] for t in b["teams"] for p in t["players"] if p["position"] == "GK"}
+    assert len(keepers) == 2
+
+
+def test_display_rows_follow_the_account(bundles):
+    for b in bundles.values():
+        a = b["account"]
+        assert [d["contribution_id"] for d in b["display"]] == [c["contribution_id"] for c in a["contributions"]]
+        for d, c in zip(b["display"], a["contributions"]):
+            ref = c["evidence"][0]
+            assert d["t"] == round(ref["time_seconds"] if ref["kind"] == "event" else ref["timestamp"], 2)
+            assert d["title"].lower() == (c["action"] or c["signal"]).replace("_", " ")
+            if c["kind"] == "chance_denied":
+                assert d["unit"] == "xG"
+            elif c["track"] == "off_ball":
+                assert d["unit"] == "P(goal)"
+    hero = bundles["SYN-0007-big_chance_saved-3"]
+    units = {d["contribution_id"]: d["unit"] for d in hero["display"]}
+    assert units["d163"] == "xG" and units["a163"] == "ΔxT" and units["a157"] == "VAEP"
+
+
+def test_narration_and_moments_are_embedded(bundles, accounts):
+    for b in bundles.values():
+        n = b["narration"]
+        assert n["moment_id"] == b["account"]["moment"]["moment_id"] and n["sentences"]
+        assert {s["contribution_id"] for s in n["sentences"]} == {c["contribution_id"] for c in b["account"]["contributions"]}
+        assert [m["moment_id"] for m in b["match_moments"]] == sorted(
+            (a.moment.moment_id for a in accounts),
+            key=lambda i: next((a.moment.period_id, a.moment.t_event, i) for a in accounts if a.moment.moment_id == i))

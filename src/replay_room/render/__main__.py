@@ -17,6 +17,7 @@ from replay_room.attribution.engine import attribute_match
 from replay_room.attribution.store import ACCOUNTS_DIR, save_accounts
 from replay_room.contracts.moment import EXPLAINED_CLASSES
 from replay_room.detect.__main__ import parse_classes
+from replay_room.explain.narrate import narrate
 from replay_room.ingest import load_match
 from replay_room.render.export import write_bundles
 
@@ -26,13 +27,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("match", help="match directory (e.g. data/fixtures/synthetic_match_01)")
     ap.add_argument("--classes", type=parse_classes, default=EXPLAINED_CLASSES)
     ap.add_argument("--out", default=str(ACCOUNTS_DIR), help=f"output root (default {ACCOUNTS_DIR})")
+    ap.add_argument("--narration", choices=["foundry", "template", "none"], default="foundry",
+                    help="narration to embed (foundry falls back to the template when unavailable; default foundry)")
     args = ap.parse_args(argv)
     match = load_match(args.match)
     with warnings.catch_warnings():  # socceraction's VAEP feature code trips pandas FutureWarnings
         warnings.simplefilter("ignore", FutureWarning)
         accounts = attribute_match(match, args.classes)
     save_accounts(accounts, args.out)
-    for path in write_bundles(accounts, match, args.out):
+    narrations = {} if args.narration == "none" else {a.moment.moment_id: narrate(a, args.narration) for a in accounts}
+    for path in write_bundles(accounts, match, args.out, narrations):
         print(f"wrote {path}", file=sys.stderr)
     return 0
 

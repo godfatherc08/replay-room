@@ -11,6 +11,13 @@ nothing that decides anything:
   (``null`` where the object is missing from a frame; never filled in);
 * ``events``: the SPADL actions the viewer draws (the chain, the turnover, and
   every action the account cites), each with the window frame it aligns with;
+* ``match``: teams, the score when the moment began, and the match clock
+  (``period_offset_s`` turns a period time into elapsed match time);
+* ``goalkeepers``: the goalkeepers' player ids (drawn in a distinct colour);
+* ``display``: per contribution, title / subtitle / unit / time / match clock
+  (``render.display``), all read off the account;
+* ``narration``: the Build 6 narration of this account (validated), or null;
+* ``match_moments``: every moment exported with this one (for the timeline);
 * ``key_spot``: where the key event happened and the radius scale Build 4's
   off-ball track measured space at (``attribution.off_ball.SPOT_SIGMA``);
 * ``jumps``: one per contribution, in rank order, the frame the camera jumps
@@ -35,10 +42,12 @@ from replay_room.attribution.off_ball import SPOT_SIGMA
 from replay_room.attribution.store import ACCOUNTS_DIR
 from replay_room.contracts.causal_account import CausalAccount
 from replay_room.contracts.pitch import BALL_ID, PITCH_LENGTH, PITCH_WIDTH
+from replay_room.explain.schema import Narration
 from replay_room.ingest.loader import Match
+from replay_room.render.display import contribution_display, match_clock, score_before
 from replay_room.metrics.pass_value import frame_ids_at
 
-BUNDLE_VERSION = "1"
+BUNDLE_VERSION = "2"
 
 
 def _r(v: float) -> float | None:
@@ -49,7 +58,14 @@ def bundle_path(account: CausalAccount, root: str | Path = ACCOUNTS_DIR) -> Path
     return Path(root) / account.game_id / f"{account.moment.moment_id}.bundle.json"
 
 
-def export_moment(account: CausalAccount, match: Match) -> dict[str, Any]:
+def moment_entry(account: CausalAccount, match: Match) -> dict[str, Any]:
+    m = account.moment
+    return {"moment_id": m.moment_id, "type": m.type, "period_id": m.period_id, "t_event": round(m.t_event, 2),
+            "realized": account.outcome.realized, "match_clock": match_clock(match.meta, m.period_id, m.t_event)}
+
+
+def export_moment(account: CausalAccount, match: Match, narration: Narration | None = None,
+                  moments: Iterable[CausalAccount] = ()) -> dict[str, Any]:
     m = account.moment
     w = m.window
     window = match.tracking[(match.tracking["frame_id"] >= w.frame_start) & (match.tracking["frame_id"] <= w.frame_end)]
@@ -106,6 +122,9 @@ def export_moment(account: CausalAccount, match: Match) -> dict[str, Any]:
         teams.append({"team_id": t.team_id, "name": t.name, "short_name": t.short_name, "side": side,
                       "players": [{"player_id": p.player_id, "name": p.name, "shirt_number": p.shirt_number,
                                    "position": p.position} for p in t.players]})
+    meta = match.meta
+    offset = sum(p.end_seconds - p.start_seconds for p in meta.periods if p.period_id < m.period_id)
+    team = lambda t: {"team_id": t.team_id, "name": t.name, "short_name": t.short_name}  # noqa: E731
     return {
         "bundle_version": BUNDLE_VERSION,
         "account": account.model_dump(mode="json"),
@@ -118,6 +137,20 @@ def export_moment(account: CausalAccount, match: Match) -> dict[str, Any]:
         "objects": objects,
         "tracks": tracks,
         "events": events,
+        "match": {
+            "game_id": meta.game_id, "competition": meta.competition,
+            "home": team(meta.home_team), "away": team(meta.away_team),
+            "score_before": score_before(match.actions, meta, m.period_id, m.t_event),
+            "period_offset_s": offset,
+            "duration_s": sum(p.end_seconds - p.start_seconds for p in meta.periods),
+            "moment_clock": match_clock(meta, m.period_id, m.t_event),
+        },
+        "goalkeepers": sorted(p.player_id for t in (meta.home_team, meta.away_team) for p in t.players
+                              if p.position == "GK"),
+        "display": contribution_display(account, meta),
+        "narration": narration.model_dump(mode="json") if narration is not None else None,
+        "match_moments": sorted((moment_entry(a, match) for a in moments),
+                                key=lambda e: (e["period_id"], e["t_event"], e["moment_id"])),
         "key_spot": {"x": _r(by_id.at[m.key_event_ref.action_id, "start_x"]),
                      "y": _r(by_id.at[m.key_event_ref.action_id, "start_y"]), "sigma_m": SPOT_SIGMA},
         "jumps": jumps,
@@ -128,13 +161,20 @@ def dumps(bundle: dict[str, Any]) -> str:
     return json.dumps(bundle, separators=(",", ":"), ensure_ascii=False) + "\n"
 
 
-def write_bundles(accounts: Iterable[CausalAccount], match: Match, root: str | Path = ACCOUNTS_DIR) -> list[Path]:
-    """One bundle per account next to it, plus ``<root>/index.json`` listing every bundle under root."""
+def write_bundles(accounts: Iterable[CausalAccount], match: Match, root: str | Path = ACCOUNTS_DIR,
+                  narrations: dict[str, Narration] | None = None) -> list[Path]:
+    """One bundle per account next to it, plus ``<root>/index.json`` listing every bundle under root.
+
+    ``narrations``: moment_id -> its validated narration (omitted moments get none).
+    """
+    accounts = list(accounts)
+    narrations = narrations or {}
     paths = []
     for account in accounts:
         path = bundle_path(account, root)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(dumps(export_moment(account, match)), encoding="utf-8", newline="\n")
+        bundle = export_moment(account, match, narrations.get(account.moment.moment_id), accounts)
+        path.write_text(dumps(bundle), encoding="utf-8", newline="\n")
         paths.append(path)
     write_index(root)
     return paths
