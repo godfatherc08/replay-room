@@ -84,6 +84,8 @@ def test_events_cover_the_chain_and_citations(bundles):
     assert ids == sorted(ids)
     assert set(a["evidence"]["events"]) <= set(ids)
     assert {r["action_id"] for r in a["moment"]["chain"]} <= set(ids)
+    key = next(e for e in b["events"] if e["action_id"] == a["moment"]["key_event_ref"]["action_id"])
+    assert [b["key_spot"]["x"], b["key_spot"]["y"]] == key["start"] and b["key_spot"]["sigma_m"] == 4.0
     save = next(e for e in b["events"] if e["action_id"] == 23)
     assert (save["type"], save["player_id"], save["in_window"]) == ("keeper_save", "NBR-01", True)
 

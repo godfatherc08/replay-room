@@ -11,6 +11,8 @@ nothing that decides anything:
   (``null`` where the object is missing from a frame; never filled in);
 * ``events``: the SPADL actions the viewer draws (the chain, the turnover, and
   every action the account cites), each with the window frame it aligns with;
+* ``key_spot``: where the key event happened and the radius scale Build 4's
+  off-ball track measured space at (``attribution.off_ball.SPOT_SIGMA``);
 * ``jumps``: one per contribution, in rank order, the frame the camera jumps
   to. An off-ball fact jumps to its first cited frame; an on-ball fact to the
   frame aligned with its cited event (Build 3's nearest-frame rule). An event
@@ -29,6 +31,7 @@ from typing import Any
 
 import numpy as np
 
+from replay_room.attribution.off_ball import SPOT_SIGMA
 from replay_room.attribution.store import ACCOUNTS_DIR
 from replay_room.contracts.causal_account import CausalAccount
 from replay_room.contracts.pitch import BALL_ID, PITCH_LENGTH, PITCH_WIDTH
@@ -115,6 +118,8 @@ def export_moment(account: CausalAccount, match: Match) -> dict[str, Any]:
         "objects": objects,
         "tracks": tracks,
         "events": events,
+        "key_spot": {"x": _r(by_id.at[m.key_event_ref.action_id, "start_x"]),
+                     "y": _r(by_id.at[m.key_event_ref.action_id, "start_y"]), "sigma_m": SPOT_SIGMA},
         "jumps": jumps,
     }
 

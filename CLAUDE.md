@@ -117,6 +117,8 @@ train:        python -m replay_room.metrics.train      (builds/caches the 200-ma
 metrics:      python -m replay_room.metrics data/fixtures/synthetic_match_01 [--frame-every 5]
 attribute:    python -m replay_room.attribution data/fixtures/synthetic_match_01 [--classes ...] [--json] [--save [DIR]]
               (one CausalAccount per engine-eligible moment; --save writes data/accounts/<game>/<moment>.json)
+render:       python -m replay_room.render data/fixtures/synthetic_match_01   (accounts + viewer bundles in data/accounts/)
+viewer:       cd viewer && npm install && npm run dev   (http://localhost:5173/?moment=<id>&jump=<contribution>; npm test)
 gen fixture:  python -m replay_room.ingest.generator --seed 7 --out data/fixtures/synthetic_match_01
 schema:       python -m replay_room.contracts      (regenerates data/schema/causal_account.schema.json)
 test:         python -m pytest
