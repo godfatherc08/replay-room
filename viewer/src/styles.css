@@ -13,6 +13,7 @@
   --headline: #f59e0b;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* layout rules below must not resurrect hidden elements */
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
              font: 14px/1.4 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
 button { font: inherit; color: inherit; cursor: pointer; }

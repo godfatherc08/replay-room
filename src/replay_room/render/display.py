@@ -69,7 +69,9 @@ def contribution_display(account: CausalAccount, meta: MatchMeta) -> list[dict[s
         t = ref.time_seconds if ref.kind == "event" else ref.timestamp
         number, name = names.get(c.player_id, (None, c.player_id))
         label = c.action or c.signal
-        subtitle = _words(c.role) if c.track == "on_ball" else f"{_words(c.role)} · {_words(c.kind)}"
+        subtitle = _words(c.role)
+        if c.track == "off_ball" and c.kind != c.role:  # e.g. "defensive error · marking break"
+            subtitle = f"{subtitle} · {_words(c.kind)}"
         out.append({
             "contribution_id": c.contribution_id,
             "title": _words(label).capitalize(),
