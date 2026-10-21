@@ -9,6 +9,11 @@ describe("PitchScene (headless)", () => {
     const b = fixture();
     const scene = new PitchScene(new NullEngine(), b, { labels: false });
     expect(scene.markers.size).toBe(b.objects.length);
+    const players = b.objects.filter((o) => o.kind === "player").length;
+    expect(players).toBe(22);
+    expect(scene.bodies.parts).toHaveLength(1); // one shared mesh...
+    expect(scene.bodies.instanceCount).toBe(players); // ...drawn 22 times
+    expect(scene.shirt(b.goalkeepers[0])).not.toBe(scene.shirt(b.objects.find((o) => o.kind === "player" && !b.goalkeepers.includes(o.id))!.id));
     new Viewer(b, scene).frame(0);
     const m = scene.markers.get("EPA-11")!;
     expect(m.root.isEnabled()).toBe(true);

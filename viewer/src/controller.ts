@@ -1,6 +1,6 @@
 // Wires the clock, the scene and the account together. It shows what Build 4 computed; it decides nothing.
 
-import { contribution, highlightedPlayers } from "./account";
+import { contribution, evidenceRows, highlightedPlayers } from "./account";
 import { type Bundle, positionAt } from "./bundle";
 import { type Sample, sampleTrack } from "./motion";
 import { outcomeOverlays, type Overlay, overlayPoints, overlaysFor, type Vec2 } from "./overlays";
@@ -58,6 +58,24 @@ export class Viewer {
     const points = players.map((p) => positionAt(this.bundle, p, frameId)).filter((p): p is Vec2 => p !== null);
     this.scene.focus([...points, ...overlayPoints(own)]);
     this.scene.update(this.samples());
+  }
+
+  /** Jump to the previous / next piece of evidence in story order (from the active one, or from the start). */
+  stepEvidence(dir: 1 | -1): string | null {
+    const rows = evidenceRows(this.bundle);
+    if (rows.length === 0) return null;
+    const at = rows.findIndex((r) => r.id === this.active);
+    const next = at < 0 ? (dir > 0 ? 0 : rows.length - 1) : Math.min(Math.max(at + dir, 0), rows.length - 1);
+    this.jump(rows[next].id);
+    return rows[next].id;
+  }
+
+  /** Jump to a player's highest-ranked contribution (if the account names them in one). */
+  selectPlayer(playerId: string): string | null {
+    const c = this.bundle.account.contributions.find((x) => x.player_id === playerId);
+    if (!c) return null;
+    this.jump(c.contribution_id);
+    return c.contribution_id;
   }
 
   /** Back to the plain replay: no highlight, only the outcome drawn. */

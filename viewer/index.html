@@ -3,65 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Replay Room Viewer</title>
-    <style>
-      :root {
-        --bg: #0f1720;
-        --panel: #151f2b;
-        --line: #26364a;
-        --text: #e6edf5;
-        --muted: #8ea0b5;
-        --pos: #4ade80;
-        --neg: #f87171;
-        --prevented: #f97316;
-        --realized: #60a5fa;
-      }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-                   font: 14px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
-      #app { display: grid; grid-template-columns: 1fr 380px; height: 100%; }
-      #pitch { width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
-      #side { display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--line);
-              min-height: 0; }
-      .rr-header { padding: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
-      .rr-moment { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line);
-                   padding: 6px; border-radius: 6px; }
-      .rr-banner { display: grid; gap: 2px; padding: 8px 10px; border-radius: 6px; border-left: 4px solid; }
-      .rr-banner strong { text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
-      .rr-prevented { border-color: var(--prevented); background: rgba(249, 115, 22, 0.12); }
-      .rr-realized { border-color: var(--realized); background: rgba(96, 165, 250, 0.12); }
-      .rr-panel { list-style: none; margin: 0; padding: 8px; overflow-y: auto; flex: 1; display: grid; gap: 6px;
-                  align-content: start; }
-      .rr-item { width: 100%; text-align: left; display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px;
-                 background: var(--bg); color: var(--text); border: 1px solid var(--line);
-                 border-left: 4px solid var(--team); border-radius: 6px; padding: 8px; cursor: pointer; font: inherit; }
-      .rr-item:hover { border-color: #3b4f68; border-left-color: var(--team); }
-      .rr-active { outline: 2px solid #facc15; }
-      .rr-headline { background: #1b2836; }
-      .rr-rank { grid-row: span 2; color: var(--muted); font-size: 12px; min-width: 52px; }
-      .rr-headline .rr-rank { color: #facc15; font-weight: 600; }
-      .rr-player { font-weight: 600; }
-      .rr-effect { grid-row: span 2; font-variant-numeric: tabular-nums; font-weight: 700; align-self: center; }
-      .rr-pos { color: var(--pos); }
-      .rr-neg { color: var(--neg); }
-      .rr-label { color: var(--text); }
-      .rr-meta { grid-column: 2 / 4; color: var(--muted); font-size: 12px; }
-      .rr-transport { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line);
-                      flex-wrap: wrap; }
-      .rr-transport button, .rr-transport select { background: var(--bg); color: var(--text);
-                      border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; }
-      .rr-scrub { flex: 1; min-width: 120px; }
-      .rr-time { color: var(--muted); font-variant-numeric: tabular-nums; width: 100%; font-size: 12px; }
-      @media (max-width: 860px) {
-        #app { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; }
-        #side { border-left: 0; border-top: 1px solid var(--line); }
-      }
-    </style>
+    <title>Replay Room</title>
+    <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
     <div id="app">
-      <canvas id="pitch" aria-label="3D replay"></canvas>
-      <aside id="side">Loading…</aside>
+      <header id="topbar" class="rr-topbar"></header>
+      <nav id="rail" class="rr-rail" aria-label="sections"></nav>
+      <main id="stage" class="rr-stage">
+        <canvas id="pitch" aria-label="3D replay of the moment"></canvas>
+        <div id="stage-ui"></div>
+      </main>
+      <aside id="side" class="rr-side">Loading…</aside>
+      <footer id="footer" class="rr-footer"></footer>
     </div>
     <script type="module" src="./src/main.ts"></script>
   </body>

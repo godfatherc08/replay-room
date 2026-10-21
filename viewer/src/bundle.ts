@@ -121,8 +121,63 @@ export interface TeamRoster {
   players: { player_id: string; name: string; shirt_number: number; position: string }[];
 }
 
+export interface DisplayRow {
+  contribution_id: string;
+  title: string;
+  subtitle: string;
+  player: string;
+  unit: string;
+  t: number;
+  match_clock: string;
+}
+
+export interface MatchInfo {
+  game_id: string;
+  competition: string;
+  home: { team_id: string; name: string; short_name: string };
+  away: { team_id: string; name: string; short_name: string };
+  score_before: { home: number; away: number };
+  period_offset_s: number;
+  duration_s: number;
+  moment_clock: string;
+}
+
+export interface MatchMoment {
+  moment_id: string;
+  type: string;
+  period_id: number;
+  t_event: number;
+  realized: boolean;
+  match_clock: string;
+}
+
+export interface NarrationSentence {
+  index: number;
+  contribution_id: string;
+  role: string;
+  headline: boolean;
+  text: string;
+  ref: Ref;
+  t: number;
+}
+
+export interface Narration {
+  moment_id: string;
+  framing: "realized" | "prevented";
+  source: "foundry" | "template";
+  model: string | null;
+  fallback_reason: string | null;
+  headline_text: string;
+  sentences: NarrationSentence[];
+}
+
 export interface Bundle {
-  bundle_version: "1";
+  bundle_version: "2";
+  match: MatchInfo;
+  goalkeepers: string[];
+  display: DisplayRow[];
+  narration: Narration | null;
+  match_moments: MatchMoment[];
   account: Account;
   pitch: { length: number; width: number; units: "m"; origin: string; x_axis: string; frame_rate_hz: number };
   teams: TeamRoster[];
@@ -142,12 +197,13 @@ export interface IndexEntry {
   bundle: string;
 }
 
-const REQUIRED = ["account", "pitch", "teams", "frames", "objects", "tracks", "events", "key_spot", "jumps"] as const;
+const REQUIRED = ["account", "pitch", "teams", "frames", "objects", "tracks", "events", "key_spot", "jumps", "match",
+                  "goalkeepers", "display", "narration", "match_moments"] as const;
 
 export function parseBundle(data: unknown): Bundle {
   if (typeof data !== "object" || data === null) throw new Error("bundle is not an object");
   const b = data as Record<string, unknown>;
-  if (b.bundle_version !== "1") throw new Error(`unsupported bundle version ${String(b.bundle_version)}`);
+  if (b.bundle_version !== "2") throw new Error(`unsupported bundle version ${String(b.bundle_version)}`);
   for (const key of REQUIRED) if (!(key in b)) throw new Error(`bundle is missing "${key}"`);
   const bundle = data as Bundle;
   const frames = new Set(bundle.frames.frame_ids);

@@ -1,111 +1,130 @@
-// The DOM around the canvas: outcome banner, contribution panel (headline first), transport.
-// Every label is a field of the account or the bundle; nothing here is generated prose.
+// The app shell around the canvas, composed from ui/*: top bar, left rail, stage overlays, the right
+// panel (Event / Tactics / Metrics / Players), and the footer (transport + timeline).
+//
+// Every word and number shown is a field of the bundle (account, display rows, narration, match info);
+// a slot the bundle has nothing for (no narration, no counterfactual) is left out, never filled in.
+// Fan mode is the seam for Build 7: today it shows the moment header and the summary only.
 
-import { outcomeBanner, panelItems } from "./account";
+import { scoreAt } from "./account";
 import type { IndexEntry } from "./bundle";
 import type { Viewer } from "./controller";
+import { el } from "./ui/dom";
+import { buildEvent, type Store } from "./ui/event";
+import { buildFooter } from "./ui/footer";
+import { buildRail } from "./ui/rail";
+import { buildStage, type StageControls } from "./ui/stage";
+import { type Mode, type Tab, UIState } from "./ui/state";
+import { buildMetrics, buildMoments, buildPlayers, buildTactics } from "./ui/tabs";
+import { buildTopbar } from "./ui/topbar";
+
+export type { Mode, Tab, StageControls };
+
+export interface UIRoots {
+  topbar: HTMLElement;
+  rail: HTMLElement;
+  stage: HTMLElement; // overlays on top of the canvas
+  side: HTMLElement;
+  footer: HTMLElement;
+}
 
 export interface UIOptions {
   moments?: IndexEntry[];
-  current?: string;
   onPick?: (momentId: string) => void;
+  stage?: StageControls;
+  storage?: Store;
+  mode?: Mode;
 }
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
+export interface UIHandle {
+  state: UIState;
+  sync(): void; // refresh what depends on the playhead or the camera (call once per frame)
 }
 
-export function buildUI(root: HTMLElement, viewer: Viewer, opts: UIOptions = {}): void {
+export function buildUI(roots: UIRoots, viewer: Viewer, opts: UIOptions = {}): UIHandle {
   const { bundle, clock } = viewer;
-  root.replaceChildren();
+  const state = new UIState(opts.mode ?? "analyst");
+  const storage = opts.storage === undefined ? safeStorage() : opts.storage;
 
-  const header = el("header", "rr-header");
-  if (opts.moments && opts.moments.length) {
-    const pick = el("select", "rr-moment");
-    pick.setAttribute("aria-label", "moment");
-    for (const m of opts.moments) {
-      const o = el("option", undefined, `${m.moment_id}${m.realized ? "" : " (prevented)"}`);
-      o.value = m.moment_id;
-      o.selected = m.moment_id === opts.current;
-      pick.append(o);
-    }
-    pick.addEventListener("change", () => opts.onPick?.(pick.value));
-    header.append(pick);
-  }
-  const banner = outcomeBanner(bundle);
-  const b = el("div", `rr-banner rr-${banner.framing}`);
-  b.dataset.framing = banner.framing;
-  b.append(el("strong", undefined, banner.title), el("span", undefined, banner.detail));
-  header.append(b);
+  const top = buildTopbar(roots.topbar, bundle, clock, state);
+  const stage = buildStage(roots.stage, opts.stage);
+  top.legendToggle.addEventListener("change", () => (stage.legend.hidden = !top.legendToggle.checked));
 
-  const panel = el("ol", "rr-panel");
-  panel.setAttribute("aria-label", "contributions");
-  const buttons = new Map<string, HTMLButtonElement>();
-  for (const item of panelItems(bundle)) {
-    const li = el("li");
-    const btn = el("button", `rr-item rr-${item.track}${item.headline ? " rr-headline" : ""}`);
-    btn.type = "button";
-    btn.dataset.id = item.id;
-    btn.dataset.frame = String(item.frameId);
-    btn.style.setProperty("--team", bundle.teams.find((t) => t.team_id === item.teamId)?.side === "home" ? "#3b82f6" : "#ef4444");
-    btn.append(
-      el("span", "rr-rank", item.headline ? "headline" : `#${item.rank}`),
-      el("span", "rr-player", `${item.playerLabel} · ${item.teamName}`),
-      el("span", "rr-label", `${item.label} · ${item.role.replace(/_/g, " ")}`),
-      el("span", `rr-effect ${item.effect >= 0 ? "rr-pos" : "rr-neg"}`, item.effectText),
-      el("span", "rr-meta", `${item.track.replace("_", "-")} · frame ${item.frameId}${item.inWindow ? "" : " (event before the window)"}${item.hasCounterfactual ? " · counterfactual" : ""}`),
-    );
-    btn.addEventListener("click", () => {
-      viewer.jump(item.id);
-      for (const [id, other] of buttons) other.classList.toggle("rr-active", id === item.id);
+  const event = buildEvent(viewer, storage);
+  const fanNote = el("p", "rr-fan-note",
+    "Fan view arrives with personalization (Build 7). Switch to Analyst for the full evidence.");
+  let showingMoments = false;
+
+  roots.side.replaceChildren();
+  const tabs = el("div", "rr-tabs");
+  tabs.setAttribute("role", "tablist");
+  const tabButtons = (["event", "tactics", "metrics", "players"] as Tab[]).map((t) => {
+    const b = el("button", "rr-tab", t[0].toUpperCase() + t.slice(1));
+    b.type = "button";
+    b.dataset.tab = t;
+    b.setAttribute("role", "tab");
+    b.addEventListener("click", () => {
+      showingMoments = false;
+      state.setTab(t);
     });
-    buttons.set(item.id, btn);
-    li.append(btn);
-    panel.append(li);
-  }
+    tabs.append(b);
+    return b;
+  });
+  const body = el("div", "rr-side-body");
+  roots.side.append(tabs, body);
 
-  const transport = el("div", "rr-transport");
-  const play = el("button", "rr-play", "Play");
-  play.type = "button";
-  play.addEventListener("click", () => clock.toggle());
-  const scrub = el("input", "rr-scrub");
-  scrub.type = "range";
-  scrub.min = "0";
-  scrub.max = String(clock.last);
-  scrub.step = "0.01";
-  scrub.setAttribute("aria-label", "timeline");
-  scrub.addEventListener("input", () => {
-    clock.pause();
-    clock.seekIndex(Number(scrub.value));
+  const afterJump = () => event.markActive();
+  const render = () => {
+    roots.side.dataset.mode = state.mode;
+    tabs.hidden = state.mode === "fan";
+    for (const b of tabButtons) b.classList.toggle("rr-on", b.dataset.tab === state.tab && !showingMoments);
+    const parts: HTMLElement[] = [];
+    if (state.mode === "fan") {
+      parts.push(event.header);
+      if (event.summary) parts.push(event.summary);
+      parts.push(fanNote);
+    } else if (showingMoments) {
+      parts.push(buildMoments(viewer, opts.onPick));
+    } else if (state.tab === "event") {
+      parts.push(event.header, event.evidence);
+      if (event.summary) parts.push(event.summary);
+    } else if (state.tab === "tactics") {
+      parts.push(buildTactics(viewer, afterJump));
+    } else if (state.tab === "metrics") {
+      parts.push(buildMetrics(viewer));
+    } else {
+      parts.push(buildPlayers(viewer, afterJump));
+    }
+    body.replaceChildren(...parts);
+  };
+  state.onChange(render);
+
+  buildRail(roots.rail, state, {
+    showMoments: () => {
+      showingMoments = true;
+      render();
+    },
+    showEvidence: () => event.evidence.scrollIntoView?.({ block: "start" }),
   });
-  const speed = el("select", "rr-speed");
-  speed.setAttribute("aria-label", "speed");
-  for (const s of [0.25, 0.5, 1, 2]) {
-    const o = el("option", undefined, `${s}×`);
-    o.value = String(s);
-    o.selected = s === 1;
-    speed.append(o);
-  }
-  speed.addEventListener("change", () => clock.setSpeed(Number(speed.value)));
-  const reset = el("button", "rr-clear", "Clear");
-  reset.type = "button";
-  reset.addEventListener("click", () => {
-    viewer.clear();
-    for (const other of buttons.values()) other.classList.remove("rr-active");
-  });
-  const time = el("span", "rr-time");
-  transport.append(play, scrub, speed, reset, time);
+  const footer = buildFooter(roots.footer, viewer, opts.onPick);
+  footer.onJump(afterJump);
+  render();
+  event.markActive();
 
   const sync = () => {
-    play.textContent = clock.playing ? "Pause" : "Play";
-    scrub.value = String(clock.pos);
-    time.textContent = `P${bundle.frames.period_id} ${clock.time.toFixed(1)} s · frame ${clock.frameId}`;
+    const s = scoreAt(bundle, clock.time);
+    event.setScore(`${s.home} - ${s.away}`);
+    top.sync();
+    stage.sync();
   };
   clock.onChange(sync);
   sync();
+  return { state, sync };
+}
 
-  root.append(header, panel, transport);
+function safeStorage(): Store {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch {
+    return null; // private mode or blocked storage: the first-run hint just shows every time
+  }
 }

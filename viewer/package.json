@@ -13,7 +13,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@babylonjs/core": "8.56.2"
+    "@babylonjs/core": "8.56.2",
+    "@babylonjs/loaders": "8.56.2"
   },
   "devDependencies": {
     "jsdom": "26.1.0",

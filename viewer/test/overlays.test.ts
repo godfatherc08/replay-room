@@ -9,7 +9,7 @@ describe("overlays", () => {
     const cf = b.account.counterfactuals[0];
     const [chosen, best] = counterfactualOverlays(b, cf);
     const ball = positionAt(b, "ball", cf.decision_frame.frame_id);
-    expect(chosen).toMatchObject({ type: "arrow", from: ball, color: COLORS.chosen,
+    expect(chosen).toMatchObject({ type: "arrow", from: ball, color: COLORS.pass, dashed: true,
                                    label: `chosen: ${cf.chosen} ${cf.chosen_value.toFixed(3)}` });
     const target = positionAt(b, cf.alternatives[0].target_player_id!, cf.decision_frame.frame_id);
     expect(best).toMatchObject({ type: "arrow", from: ball, to: target, color: COLORS.better });
@@ -23,7 +23,7 @@ describe("overlays", () => {
     const b = fixture();
     const o = outcomeOverlays(b);
     const shot = b.events.find((e) => e.action_id === b.account.outcome.ref.action_id)!;
-    expect(o[0]).toMatchObject({ type: "arrow", from: shot.start, to: shot.end, dashed: true });
+    expect(o[0]).toMatchObject({ type: "arrow", from: shot.start, to: shot.end, color: COLORS.shot, dashed: false });
     expect(o[1]).toMatchObject({ type: "cross", color: COLORS.denied });
     expect(o[1].type === "cross" && o[1].label).toMatch(/^denied/);
     expect(JSON.stringify(o)).not.toContain("goal ·");
