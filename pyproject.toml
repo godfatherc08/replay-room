@@ -18,6 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Build 6: the Foundry renderer (imported lazily; the template fallback needs neither).
+foundry = ["azure-ai-projects>=2.9,<3", "azure-identity>=1.17"]
 
 [project.scripts]
 replay = "replay_room.replay.__main__:main"

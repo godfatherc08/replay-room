@@ -119,6 +119,9 @@ attribute:    python -m replay_room.attribution data/fixtures/synthetic_match_01
               (one CausalAccount per engine-eligible moment; --save writes data/accounts/<game>/<moment>.json)
 render:       python -m replay_room.render data/fixtures/synthetic_match_01   (accounts + viewer bundles in data/accounts/)
 viewer:       cd viewer && npm install && npm run dev   (http://localhost:5173/?moment=<id>&jump=<contribution>; npm test)
+explain:      python -m replay_room.explain data/accounts/SYN-0007/<moment>.json [--mode foundry|template] [--refresh] [--json]
+              (Foundry: pip install -e ".[foundry]", az login, FOUNDRY_PROJECT_ENDPOINT + FOUNDRY_MODEL_DEPLOYMENT;
+               unset or failing -> validated template fallback; live test: REPLAY_ROOM_FOUNDRY_IT=1 pytest tests/test_explain.py)
 gen fixture:  python -m replay_room.ingest.generator --seed 7 --out data/fixtures/synthetic_match_01
 schema:       python -m replay_room.contracts      (regenerates data/schema/causal_account.schema.json)
 test:         python -m pytest
