@@ -20,7 +20,8 @@ It checks, for the headline line and every sentence:
   (``STARTERS``): an unknown name (a player, team or place the account does
   not mention) is a violation wherever it stands;
 * **outcome**: if the terminal action did not score, no sentence may say that it
-  did (``SCORING_WORDS``).
+  did (``SCORING_WORDS``, unless negated within a few words: "didn't go into
+  the net"). "A scoring chance" is not a claim of a goal.
 """
 
 from __future__ import annotations
@@ -53,8 +54,10 @@ was were is are be been being had has have did do does could would should might 
 denied prevented realized realised scored missed lost won gave got made kept left let set put
 """.split())
 SCORING_WORDS = re.compile(
-    r"\b(scored|scores|scoring|netted|nets|converted|converts|finish(?:ed|es)? (?:it )?off|"
+    r"\b(scored|scores|netted|nets|converted|converts|finish(?:ed|es)? (?:it )?off|"
     r"(?:found|finds) the (?:net|back of the net)|into the net)\b", re.IGNORECASE)
+# A scoring word preceded by one of these (within a few words) is a denial, not a claim: "didn't go into the net".
+NEGATION = re.compile(r"\b(not|never|no|without|failed|fails|unable)\b|n't\b", re.IGNORECASE)
 PLAYER_ID = re.compile(r"\b[A-Z]{2,4}-\d{1,3}\b")
 NUMBER = re.compile(r"(?<![\w.])\d+(?:\.\d+)?%?")
 CAPITALISED = re.compile(r"(?<![A-Za-z\d])[A-Z][A-Za-zÀ-ſ'’-]*")
@@ -118,8 +121,12 @@ def check_text(text: str, account: CausalAccount, where: str) -> list[str]:
         if word in vocab or (SENTENCE_START.search(scrubbed[: m.start()]) and word.lower() in STARTERS):
             continue
         errors.append(f"{where}: names {word!r}, which is not in the account")
-    if not account.outcome.scored and SCORING_WORDS.search(text):
-        errors.append(f"{where}: says the chance was scored, but the outcome is no goal")
+    if not account.outcome.scored:
+        for m in SCORING_WORDS.finditer(text):
+            before = " ".join(text[: m.start()].split()[-4:])
+            if not NEGATION.search(before):
+                errors.append(f"{where}: says the chance was scored, but the outcome is no goal")
+                break
     return errors
 
 

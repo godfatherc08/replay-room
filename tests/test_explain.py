@@ -98,6 +98,16 @@ def test_validator_checks_shape_and_order(hero):
     assert any("headline" in e and "'Liverpool'" in e for e in errors) and any("states 3" in e for e in errors)
 
 
+def test_scoring_language_on_a_chance_that_did_not_score(hero):
+    def errs(text):
+        return [e for e in validate({**_good(hero), "headline_text": text}, hero) if "scored" in e]
+    for claim in ("He scored from close range.", "It was converted.", "The shot went into the net."):
+        assert errs(claim), claim
+    for fine in ("The miss denied a scoring chance.", "The shot didn't go into the net.",
+                 "It was never scored.", "He failed to convert, and it was not netted."):
+        assert errs(fine) == [], fine
+
+
 def test_numbers_match_at_the_precision_written(hero):
     v = hero.outcome.value  # 0.152
     for text in (f"worth {v:.3f}", f"worth {v:.2f}", f"worth {100 * v:.0f}%", f"worth {100 * v:.1f}%"):
