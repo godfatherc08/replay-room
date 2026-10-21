@@ -2,12 +2,13 @@ import io
 import json
 import shutil
 import warnings
+from dataclasses import replace
 
 import pytest
 
 from replay_room.attribution.__main__ import main
 from replay_room.attribution.engine import attribute, attribute_match
-from replay_room.attribution.fuse import EFFECT_THRESHOLD, TOP_K, select
+from replay_room.attribution.fuse import EFFECT_THRESHOLD, RECENCY_FLOOR, TOP_K, headline, recency, select
 from replay_room.attribution.outcome import Candidate
 from replay_room.attribution.store import load_account, save_accounts
 from replay_room.contracts import CausalAccount, EventRef
@@ -49,9 +50,13 @@ def test_realized_goal(accounts):
     c = _by_id(a)
     assert c["a35"].role == "assist" and c["a35"].effect > EFFECT_THRESHOLD  # the key pass is a creator
     head = a.headline
-    assert head.contribution_id == "a30" and head.role == "primary_cause"  # NBR-04's lost ball
+    # NBR-05 conceding space just before the shot leads NBR-04's larger but earlier lost ball (recency)
+    assert head.contribution_id == "sNBR-05" and head.role == "primary_cause" and head.track == "off_ball"
     assert head.team_id == a.outcome.conceding_team_id and head.effect > 0
-    assert head.effect == max(x.effect for x in a.contributions if x.team_id == a.outcome.conceding_team_id)
+    lost = c["a30"]
+    assert lost.role == "defensive_error" and lost.effect > head.effect and lost.rank < head.rank  # ranks unchanged
+    m = a.moment
+    assert head.effect * recency(head.t, m.t_start, m.t_event) > lost.effect * recency(lost.t, m.t_start, m.t_event)
 
 
 def test_off_ball_lapse_can_be_the_headline(accounts):
@@ -111,6 +116,21 @@ def test_select_ranks_and_filters():
     assert len(select([_cand(f"c{i}", 0.02 + i / 1000) for i in range(TOP_K + 5)])) == TOP_K
     with pytest.raises(ValueError, match="duplicate"):
         select([_cand("a", 0.1), _cand("a", 0.2)])
+
+
+def test_headline_weighs_effect_by_recency():
+    from replay_room.contracts.causal_account import Outcome
+
+    ref = EventRef(action_id=9, original_event_id="e9", period_id=1, time_seconds=20.0)
+    outcome = Outcome(ref=ref, value=0.2, value_source="xg", scored=True, realized=True,
+                      beneficiary_team_id="A", conceding_team_id="B")
+    early = replace(_cand("early", 0.08, team="B"), t=11.0)
+    late = replace(_cand("late", 0.03, team="B"), t=19.0)
+    creator = _cand("creator", 0.2)
+    assert recency(5.0, 10.0, 20.0) == RECENCY_FLOOR and recency(20.0, 10.0, 20.0) == 1.0
+    assert headline([early, late, creator], outcome, 10.0, 20.0).key == "late"  # 0.03 x 0.9 > 0.08 x 0.1
+    assert headline([early, creator], outcome, 10.0, 20.0).key == "early"  # a conceding failure still leads
+    assert headline([creator], outcome, 10.0, 20.0).key == "creator"
 
 
 def test_every_contribution_is_bound(accounts, match):

@@ -60,7 +60,7 @@ def attribute(
     candidates += off_ball_candidates(vm, frames, (float(key["start_x"]), float(key["start_y"])), outcome.value,
                                       m.attacking_team_id == meta.home_team_id, keepers)
     kept = select(candidates)
-    head = headline(kept, outcome)
+    head = headline(kept, outcome, m.t_start, m.t_event)
     contribs = contributions(kept, head, outcome)
 
     pressure = under_pressure(by_id, context)
