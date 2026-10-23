@@ -10,14 +10,15 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "shots": "node scripts/shots.mjs"
   },
   "dependencies": {
-    "@babylonjs/core": "8.56.2",
-    "@babylonjs/loaders": "8.56.2"
+    "@babylonjs/core": "8.56.2"
   },
   "devDependencies": {
     "jsdom": "26.1.0",
+    "playwright-core": "1.53.2",
     "typescript": "5.9.3",
     "vite": "6.4.4",
     "vitest": "3.2.7"

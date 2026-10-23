@@ -118,7 +118,8 @@ metrics:      python -m replay_room.metrics data/fixtures/synthetic_match_01 [--
 attribute:    python -m replay_room.attribution data/fixtures/synthetic_match_01 [--classes ...] [--json] [--save [DIR]]
               (one CausalAccount per engine-eligible moment; --save writes data/accounts/<game>/<moment>.json)
 render:       python -m replay_room.render data/fixtures/synthetic_match_01   (accounts + viewer bundles in data/accounts/)
-viewer:       cd viewer && npm install && npm run dev   (http://localhost:5173/?moment=<id>&jump=<contribution>; npm test)
+viewer:       cd viewer && npm install && npm run dev   (http://localhost:5173/?moment=<id>[&mode=fan][&step=<n>|&jump=<contribution>][&play=1]; npm test)
+shots:        cd viewer && npm run shots -- <outDir>   (dev server up; headless Edge screenshots of the hero moment's Story states)
 explain:      python -m replay_room.explain data/accounts/SYN-0007/<moment>.json [--mode foundry|template] [--refresh] [--json]
               (Foundry: pip install -e ".[foundry]", az login, FOUNDRY_PROJECT_ENDPOINT + FOUNDRY_MODEL_DEPLOYMENT;
                unset or failing -> validated template fallback; live test: REPLAY_ROOM_FOUNDRY_IT=1 pytest tests/test_explain.py)
