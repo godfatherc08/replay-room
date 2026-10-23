@@ -38,6 +38,7 @@ interface Marker {
 
 const VIEW_3D = { alpha: -Math.PI / 2, beta: 0.95, radius: 92 };
 const VIEW_2D_BETA = 0.0001;
+const TAG_REFERENCE_RADIUS = 36; // camera distance at which tags are drawn at their own size; farther, they grow
 const FOCUS_LIFT = 0.12; // share of the camera distance the focus moves towards the camera
 
 export class PitchScene {
@@ -436,8 +437,19 @@ export class PitchScene {
     return this.camera.alpha - VIEW_3D.alpha;
   }
 
-  /** Per-frame camera easing towards the last focus. */
+  /** Per-frame camera easing towards the last focus; tags keep a readable size at any distance. */
   step(dtSeconds: number): void {
+    const s = Math.min(Math.max(this.camera.radius / TAG_REFERENCE_RADIUS, 1), 2.4);
+    for (const m of this.markers.values()) {
+      if (!m.plate) continue;
+      m.plate.scaling.setAll(s);
+      m.plate.position.y = PLAYER_HEIGHT + 0.15 + 0.45 * s; // the plate's bottom edge stays above the head
+    }
+    if (this.label) {
+      const t = Math.min(s, 1.6);
+      this.label.mesh.scaling.setAll(t);
+      this.label.mesh.position.y = PLAYER_HEIGHT + 0.2 + 0.5 * t;
+    }
     const k = 1 - Math.exp(-dtSeconds * 4);
     if (this.desiredTarget) {
       this.camera.target = Vector3.Lerp(this.camera.target, this.desiredTarget, k);

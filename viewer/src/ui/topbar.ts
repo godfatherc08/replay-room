@@ -8,14 +8,12 @@ import { teamColor } from "../overlays";
 import { el } from "./dom";
 import type { Mode, UIState, View } from "./state";
 
-/** A plain shield in the team's shirt colour with its short name: decoration, not a crest. */
-export function badge(bundle: Bundle, teamId: string, size = 22): HTMLElement {
-  const team = bundle.teams.find((t) => t.team_id === teamId);
+/** A plain shield in the team's shirt colour (the name sits beside it): decoration, not a crest. */
+export function badge(bundle: Bundle, teamId: string, size = 18): HTMLElement {
   const span = el("span", "rr-badge");
   span.innerHTML = `<svg viewBox="0 0 32 36" width="${size}" height="${Math.round(size * 1.12)}" aria-hidden="true">`
     + `<path d="M16 1l14 5v11c0 9-6.5 15.5-14 18C8.5 32.5 2 26 2 17V6z" fill="${teamColor(bundle, teamId)}" stroke="#0b1220" stroke-width="1.5"/>`
-    + `<text x="16" y="21" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff" `
-    + `font-family="Inter,system-ui,sans-serif">${team?.short_name ?? teamId}</text></svg>`;
+    + `<path d="M16 6l9 3.2v7.6c0 6-4.2 10.4-9 12.2" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="2"/></svg>`;
   return span;
 }
 
