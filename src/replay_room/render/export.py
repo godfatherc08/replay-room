@@ -20,6 +20,17 @@ nothing that decides anything:
 * ``match_moments``: every moment exported with this one (for the timeline);
 * ``key_spot``: where the key event happened and the radius scale Build 4's
   off-ball track measured space at (``attribution.off_ball.SPOT_SIGMA``);
+* ``meaning``: per contribution, a plain-language gloss, a role icon, its sign
+  and its |effect| normalized within the moment (``render.display.meaning``);
+* ``outcome_display``: the outcome's value as a percent, a qualitative band and
+  the result line;
+* ``story``: the order Story Mode plays the account in: the other
+  contributions in time order, then the headline, then the outcome, then each
+  counterfactual. Each step carries its frame, one caption (the
+  contribution's narration sentence; outcome / counterfactual captions are
+  assembled from their fields) and ``plain``, the same idea without numbers
+  (name + gloss), for Fan mode when the caption quotes a metric;
+* ``teams[].kit``: display colours by side (the feed has none);
 * ``jumps``: one per contribution, in rank order, the frame the camera jumps
   to. An off-ball fact jumps to its first cited frame; an on-ball fact to the
   frame aligned with its cited event (Build 3's nearest-frame rule). An event
@@ -44,10 +55,11 @@ from replay_room.contracts.causal_account import CausalAccount
 from replay_room.contracts.pitch import BALL_ID, PITCH_LENGTH, PITCH_WIDTH
 from replay_room.explain.schema import Narration
 from replay_room.ingest.loader import Match
-from replay_room.render.display import contribution_display, match_clock, score_before
+from replay_room.render.display import (KITS, contribution_display, match_clock, meaning, name_ids,
+                                        outcome_display, score_before)
 from replay_room.metrics.pass_value import frame_ids_at
 
-BUNDLE_VERSION = "2"
+BUNDLE_VERSION = "3"
 
 
 def _r(v: float) -> float | None:
@@ -119,7 +131,7 @@ def export_moment(account: CausalAccount, match: Match, narration: Narration | N
 
     teams = []
     for side, t in (("home", match.meta.home_team), ("away", match.meta.away_team)):
-        teams.append({"team_id": t.team_id, "name": t.name, "short_name": t.short_name, "side": side,
+        teams.append({"team_id": t.team_id, "name": t.name, "short_name": t.short_name, "side": side, "kit": KITS[side],
                       "players": [{"player_id": p.player_id, "name": p.name, "shirt_number": p.shirt_number,
                                    "position": p.position} for p in t.players]})
     meta = match.meta
@@ -154,7 +166,43 @@ def export_moment(account: CausalAccount, match: Match, narration: Narration | N
         "key_spot": {"x": _r(by_id.at[m.key_event_ref.action_id, "start_x"]),
                      "y": _r(by_id.at[m.key_event_ref.action_id, "start_y"]), "sigma_m": SPOT_SIGMA},
         "jumps": jumps,
+        "meaning": meaning(account),
+        "outcome_display": outcome_display(account),
+        "story": story_steps(account, narration, jumps, event_frame),
     }
+
+
+def story_steps(account: CausalAccount, narration: Narration | None, jumps: list[dict[str, Any]],
+                event_frame: dict[int, tuple[int, bool]]) -> list[dict[str, Any]]:
+    """The order Story Mode reveals the account: build-up (time order) -> headline -> outcome -> counterfactuals."""
+    frame_of = {j["contribution_id"]: j["frame_id"] for j in jumps}
+    said = {s.contribution_id: s.text for s in narration.sentences} if narration is not None else {}
+    head = account.headline_contribution_id
+    names = {p.player_id: p.name for p in account.participants}
+    glosses = {m["contribution_id"]: m["gloss"] for m in meaning(account)}
+
+    def when(c):
+        r = c.evidence[0]
+        return r.time_seconds if r.kind == "event" else r.timestamp
+
+    rest = sorted((c for c in account.contributions if c.contribution_id != head), key=lambda c: (when(c), c.rank))
+    steps = [{"kind": "contribution", "contribution_id": c.contribution_id, "frame_id": frame_of[c.contribution_id],
+              "caption": said.get(c.contribution_id),
+              "plain": f"{names.get(c.player_id, c.player_id)} — {glosses[c.contribution_id]}."}
+             for c in [*rest, account.headline]]
+    o = account.outcome
+    team = next((t.name for t in account.teams if t.team_id == o.beneficiary_team_id), o.beneficiary_team_id)
+    caption = (f"Goal for {team}." if o.scored else "The shot doesn't go in." if o.realized
+               else f"A goal that didn't happen for {team}.")
+    steps.append({"kind": "outcome", "contribution_id": None, "frame_id": event_frame[o.ref.action_id][0],
+                  "caption": caption, "plain": caption})
+    for cf in account.counterfactuals:
+        best = cf.alternatives[0]
+        caption = (f"The better option: {name_ids(best.description, account)}, "
+                   f"instead of the {name_ids(cf.chosen, account)}.")
+        steps.append({"kind": "counterfactual", "contribution_id": cf.contribution_id,
+                      "frame_id": cf.decision_frame.frame_id, "caption": caption, "plain": caption})
+    return [{"index": i, **s} for i, s in enumerate(steps)]
 
 
 def dumps(bundle: dict[str, Any]) -> str:

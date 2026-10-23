@@ -151,3 +151,62 @@ def test_narration_and_moments_are_embedded(bundles, accounts):
         assert [m["moment_id"] for m in b["match_moments"]] == sorted(
             (a.moment.moment_id for a in accounts),
             key=lambda i: next((a.moment.period_id, a.moment.t_event, i) for a in accounts if a.moment.moment_id == i))
+
+
+def test_meaning_glosses_every_contribution(bundles):
+    for b in bundles.values():
+        a = b["account"]
+        rows = b["meaning"]
+        assert [m["contribution_id"] for m in rows] == [c["contribution_id"] for c in a["contributions"]]
+        peak = max(abs(c["effect"]) for c in a["contributions"])
+        for m, c in zip(rows, a["contributions"]):
+            assert m["gloss"] and m["icon"] in {"pass", "carry", "shot", "save", "turnover", "run", "space", "marking"}
+            assert m["positive"] == (c["effect"] >= 0)
+            assert m["magnitude"] == pytest.approx(abs(c["effect"]) / peak, abs=1e-3)
+        assert max(m["magnitude"] for m in rows) == 1.0
+    hero = {m["contribution_id"]: m for m in bundles["SYN-0007-big_chance_saved-3"]["meaning"]}
+    assert hero["d163"]["gloss"] == "the miss that let them off" and not hero["d163"]["positive"]
+    assert hero["a157"]["gloss"] == "a dangerous pass"  # VAEP +0.087 >= DANGEROUS_VALUE
+    assert hero["a159"]["gloss"] == "moved the ball forward"
+    assert hero["a161"]["gloss"] == "set up the shot"
+    assert hero["sEPA-11"]["icon"] == "run" and hero["sNBR-05"]["gloss"] == "left space open"
+    saved = {m["contribution_id"]: m for m in bundles["SYN-0007-big_chance_saved-1"]["meaning"]}
+    assert saved["d23"]["gloss"] == "the save that stopped it" and saved["d23"]["icon"] == "save"
+    assert saved["a19"]["gloss"] == "lost possession here" and saved["a19"]["icon"] == "turnover"
+
+
+def test_outcome_display_and_kits(bundles):
+    hero = bundles["SYN-0007-big_chance_saved-3"]
+    assert hero["outcome_display"] == {"percent": 15, "label": "15% chance of scoring", "band": "a good chance",
+                                       "result": "A goal that didn't happen"}
+    assert bundles["SYN-0007-goal-1"]["outcome_display"]["result"] == "Goal"
+    for b in bundles.values():
+        kits = {t["side"]: t["kit"] for t in b["teams"]}
+        assert kits["home"]["shirt"] != kits["away"]["shirt"]
+        assert kits["home"]["keeper"] not in (kits["home"]["shirt"], kits["away"]["shirt"])
+
+
+def test_story_builds_up_to_the_headline_then_the_outcome(bundles):
+    for b in bundles.values():
+        a = b["account"]
+        story = b["story"]
+        assert [s["index"] for s in story] == list(range(len(story)))
+        steps = [s for s in story if s["kind"] == "contribution"]
+        assert {s["contribution_id"] for s in steps} == {c["contribution_id"] for c in a["contributions"]}
+        assert steps[-1]["contribution_id"] == a["headline_contribution_id"]
+        times = {d["contribution_id"]: d["t"] for d in b["display"]}
+        build_up = [times[s["contribution_id"]] for s in steps[:-1]]
+        assert build_up == sorted(build_up)
+        kinds = [s["kind"] for s in story]
+        assert kinds == ["contribution"] * len(steps) + ["outcome"] + ["counterfactual"] * len(a["counterfactuals"])
+        frames = set(b["frames"]["frame_ids"])
+        sentences = {s["contribution_id"]: s["text"] for s in b["narration"]["sentences"]}
+        for s in story:
+            assert s["frame_id"] in frames and s["caption"] and s["plain"]
+            if s["kind"] == "contribution":
+                assert s["caption"] == sentences[s["contribution_id"]]
+                assert not any(ch.isdigit() for ch in s["plain"])
+    hero = bundles["SYN-0007-big_chance_saved-3"]["story"]
+    assert hero[-1]["kind"] == "counterfactual" and hero[-1]["frame_id"] == 2408
+    assert hero[-1]["caption"] == "The better option: pass to #9 Sam Adeyemi, instead of the pass to #11 Jordan Ferraro."
+    assert hero[-2]["caption"] == "A goal that didn't happen for Eastport Athletic."

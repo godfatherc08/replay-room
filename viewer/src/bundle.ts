@@ -113,11 +113,18 @@ export interface Jump {
   in_window: boolean;
 }
 
+export interface Kit {
+  shirt: string;
+  shorts: string;
+  keeper: string;
+}
+
 export interface TeamRoster {
   team_id: string;
   name: string;
   short_name: string;
   side: "home" | "away";
+  kit: Kit;
   players: { player_id: string; name: string; shirt_number: number; position: string }[];
 }
 
@@ -171,8 +178,34 @@ export interface Narration {
   sentences: NarrationSentence[];
 }
 
+/** Plain-language meaning of a contribution (render.display.meaning). */
+export interface Meaning {
+  contribution_id: string;
+  gloss: string;
+  icon: "pass" | "carry" | "shot" | "save" | "turnover" | "run" | "space" | "marking";
+  positive: boolean;
+  magnitude: number; // |effect| / the moment's largest |effect|, 0..1
+}
+
+export interface OutcomeDisplay {
+  percent: number;
+  label: string; // "15% chance of scoring"
+  band: string; // "a good chance"
+  result: string; // "Goal" | "No goal" | "A goal that didn't happen"
+}
+
+/** One beat of Story Mode, in play order (render.export.story_steps). */
+export interface StoryStep {
+  index: number;
+  kind: "contribution" | "outcome" | "counterfactual";
+  contribution_id: string | null;
+  frame_id: number;
+  caption: string | null; // the narration sentence (contribution) or the assembled line
+  plain: string; // the same idea without numbers
+}
+
 export interface Bundle {
-  bundle_version: "2";
+  bundle_version: "3";
   match: MatchInfo;
   goalkeepers: string[];
   display: DisplayRow[];
@@ -187,6 +220,9 @@ export interface Bundle {
   events: BundleEvent[];
   key_spot: { x: number; y: number; sigma_m: number };
   jumps: Jump[];
+  meaning: Meaning[];
+  outcome_display: OutcomeDisplay;
+  story: StoryStep[];
 }
 
 export interface IndexEntry {
@@ -198,17 +234,21 @@ export interface IndexEntry {
 }
 
 const REQUIRED = ["account", "pitch", "teams", "frames", "objects", "tracks", "events", "key_spot", "jumps", "match",
-                  "goalkeepers", "display", "narration", "match_moments"] as const;
+                  "goalkeepers", "display", "narration", "match_moments", "meaning", "outcome_display",
+                  "story"] as const;
 
 export function parseBundle(data: unknown): Bundle {
   if (typeof data !== "object" || data === null) throw new Error("bundle is not an object");
   const b = data as Record<string, unknown>;
-  if (b.bundle_version !== "2") throw new Error(`unsupported bundle version ${String(b.bundle_version)}`);
+  if (b.bundle_version !== "3") throw new Error(`unsupported bundle version ${String(b.bundle_version)}`);
   for (const key of REQUIRED) if (!(key in b)) throw new Error(`bundle is missing "${key}"`);
   const bundle = data as Bundle;
   const frames = new Set(bundle.frames.frame_ids);
   for (const j of bundle.jumps) {
     if (!frames.has(j.frame_id)) throw new Error(`jump for ${j.contribution_id} targets frame ${j.frame_id}, not in the window`);
+  }
+  for (const s of bundle.story) {
+    if (!frames.has(s.frame_id)) throw new Error(`story step ${s.index} targets frame ${s.frame_id}, not in the window`);
   }
   return bundle;
 }

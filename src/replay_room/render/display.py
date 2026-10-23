@@ -82,3 +82,118 @@ def contribution_display(account: CausalAccount, meta: MatchMeta) -> list[dict[s
             "match_clock": match_clock(meta, account.moment.period_id, t),
         })
     return out
+
+
+# ------------------------------------------------------------------------------------- bundle v3: meaning
+#
+# Plain-language words for a contribution, read off its kind / role / action / signal and the sign and size
+# of its effect (never a new judgement: the role says who it helped, the effect says how much). Thresholds
+# are on the stored metric, so the same fact always gets the same words.
+
+DANGEROUS_VALUE = 0.05  # an on-ball action worth at least this much VAEP / delta-xT is called "dangerous"
+_FAILED = ("pass_fail", "goalkick_fail", "cross_fail", "dribble_fail")
+_WON = ("interception", "tackle", "clearance")
+
+# Kits by side (display only: the feed carries no colours). Keepers wear their own colour.
+KITS = {"home": {"shirt": "#d6363c", "shorts": "#f4f4f5", "keeper": "#c8e64a"},
+        "away": {"shirt": "#2f7cf6", "shorts": "#0f1e3d", "keeper": "#f59e0b"}}
+
+
+def icon(c: Contribution, account: CausalAccount) -> str:
+    """The ribbon's role icon: pass / carry / shot / save / turnover / run / space / marking."""
+    if c.kind == "space_creation":
+        return "run"
+    if c.kind == "space_conceded":
+        return "space"
+    if c.kind == "marking_break":
+        return "marking"
+    a = c.action or ""
+    if a == "keeper_save":
+        return "save"
+    if a.startswith("shot"):
+        return "shot"
+    if a in _WON or (a in _FAILED and c.team_id == account.moment.defending_team_id):
+        return "turnover"
+    if a.startswith("dribble"):
+        return "carry"
+    return "pass"
+
+
+def gloss(c: Contribution, account: CausalAccount) -> str:
+    """A few plain words for what this fact did for the chance."""
+    a = c.action or ""
+    if c.kind == "chance_denied":
+        if a == "keeper_save":
+            return "the save that stopped it"
+        if a.startswith("shot"):
+            return "the miss that let them off"
+        return "the stop that denied the goal"
+    if c.kind == "space_creation":
+        return {"run_in_behind": "ran in behind to open space", "run_into_space": "ran into open space",
+                "found_space": "found space between the lines"}.get(c.signal or "", "opened up space")
+    if c.kind == "space_conceded":
+        return "left the decisive space open" if c.role == "primary_cause" else "left space open"
+    if c.kind == "marking_break":
+        return "lost their marker"
+    defending = c.team_id == account.moment.defending_team_id
+    if defending:  # a defending player's action that helped the attack
+        return "lost possession here" if a in _FAILED or c.role in ("primary_cause", "defensive_error") else "slowed the attack"
+    if c.role == "attacking_error":
+        return "gave the ball away" if a in _FAILED or a in _WON else "cost the attack ground"
+    if c.role == "primary_cause":
+        return "created the chance"
+    if c.role == "finish":
+        return "took the shot"
+    if c.role == "assist":
+        return "set up the shot"
+    if a in _WON:
+        return "won the ball back"
+    if a == "keeper_save":
+        return "started the move"
+    dangerous = abs(c.effect) >= DANGEROUS_VALUE
+    if a.startswith("dribble"):
+        return "a dangerous carry" if dangerous else "carried the ball forward"
+    if a.startswith("pass") or a.startswith("cross"):
+        return "a dangerous pass" if dangerous else "moved the ball forward"
+    return "helped build the attack"
+
+
+def chance_band(xg: float) -> str:
+    """Qualitative size of a chance for Fan mode."""
+    if xg >= 0.3:
+        return "a big chance"
+    if xg >= 0.12:
+        return "a good chance"
+    if xg >= 0.05:
+        return "a half-chance"
+    return "a long shot"
+
+
+def outcome_display(account: CausalAccount) -> dict[str, Any]:
+    o = account.outcome
+    percent = round(100 * o.value)
+    unit = "chance of scoring" if o.value_source == "xg" else "threat"
+    if o.scored:
+        result = "Goal"
+    elif o.realized:
+        result = "No goal"
+    else:
+        result = "A goal that didn't happen"
+    return {"percent": percent, "label": f"{percent}% {unit}", "band": chance_band(o.value), "result": result}
+
+
+def name_ids(text: str, account: CausalAccount) -> str:
+    """Replace player ids in a stored description ("pass to EPA-09") with their shirt and name."""
+    for p in sorted(account.participants, key=lambda p: -len(p.player_id)):
+        if p.player_id in text:
+            who = f"#{p.shirt_number} {p.name}" if p.shirt_number is not None else p.name
+            text = text.replace(p.player_id, who)
+    return text
+
+
+def meaning(account: CausalAccount) -> list[dict[str, Any]]:
+    """Per contribution: gloss, icon, signed direction and magnitude normalized within this moment."""
+    peak = max((abs(c.effect) for c in account.contributions), default=0.0) or 1.0
+    return [{"contribution_id": c.contribution_id, "gloss": gloss(c, account), "icon": icon(c, account),
+             "positive": c.effect >= 0, "magnitude": round(abs(c.effect) / peak, 3)}
+            for c in account.contributions]
