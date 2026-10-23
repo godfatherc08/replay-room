@@ -1,28 +1,46 @@
-// Wires the clock, the scene and the account together. It shows what Build 4 computed; it decides nothing.
+// Wires the clock, the story, the scene and the account together. It shows what Build 4 computed; it decides nothing.
+//
+// Two ways through a moment:
+// * Story (default): Story walks the bundle's steps; each step leads the replay into its frame, puts its players
+//   in focus (everyone else dimmed), names the first of them, eases the camera onto them and, once the replay
+//   reaches the frame, draws that step's overlay alone.
+// * Explore: free scrubbing; clicking a fact (jump) seeks straight to its frame with the same focus and drawing.
 
-import { contribution, evidenceRows, highlightedPlayers } from "./account";
-import { type Bundle, positionAt } from "./bundle";
+import { contribution, highlightedPlayers, evidenceRows, shortLabel, stepPlayers } from "./account";
+import { type Bundle, positionAt, type StoryStep } from "./bundle";
 import { type Sample, sampleTrack } from "./motion";
-import { outcomeOverlays, type Overlay, overlayPoints, overlaysFor, type Vec2 } from "./overlays";
+import { type Mode, type Overlay, overlayPoints, overlaysFor, stepOverlays, type Vec2 } from "./overlays";
+import { Story } from "./story";
 import { Clock } from "./timeline";
 
 /** What the controller needs from a scene (the Babylon PitchScene, or a fake in tests). */
 export interface SceneLike {
   update(samples: Map<string, Sample | null>): void;
-  setHighlight(ids: string[]): void;
+  setHighlight(ids: string[]): void; // ringed and lit; everyone else dimmed (none: all lit)
+  setLabel(id: string | null, text?: string): void; // the one floating name tag
   setOverlays(overlays: Overlay[]): void;
-  focus(points: Vec2[]): void;
+  focus(points: Vec2[]): void; // eases, never snaps
   step(dtSeconds: number): void;
 }
 
+export const LEAD_IN_S = 1.2; // a step replays this much of the play before its frame
+const CONTINUE_WITHIN_S = 3.0; // closer than this ahead: keep playing from where we are instead of rewinding
+
+export type View = "story" | "explore";
+
 export class Viewer {
   readonly clock: Clock;
-  active: string | null = null;
+  readonly story: Story;
+  active: string | null = null; // the selected contribution (Explore), or the current step's contribution (Story)
+  mode: Mode = "analyst";
+  view: View = "story";
   private readonly jumps: Map<string, number>;
+  private pending: Overlay[] | null = null; // drawn when the lead-in reaches the frame
 
   constructor(readonly bundle: Bundle, readonly scene: SceneLike) {
     this.clock = new Clock(bundle.frames.frame_ids, bundle.frames.timestamps, bundle.pitch.frame_rate_hz);
     this.jumps = new Map(bundle.jumps.map((j) => [j.contribution_id, j.frame_id]));
+    this.story = new Story(bundle.story, (step) => this.showStep(step));
     this.clear();
   }
 
@@ -34,29 +52,55 @@ export class Viewer {
     return out;
   }
 
-  /** One animation step: advance the clock (if playing), move the markers, ease the camera. */
+  /** One animation step: advance the story and the clock, draw a step once its frame is reached, ease the camera. */
   frame(dtSeconds: number): void {
+    this.story.tick(dtSeconds);
     this.clock.tick(dtSeconds);
+    if (this.pending && !this.clock.playing) {
+      this.scene.setOverlays(this.pending);
+      this.pending = null;
+    }
     this.scene.update(this.samples());
     this.scene.step(dtSeconds);
   }
 
-  /** Jump to a contribution: pause, seek to its frame, highlight its players, draw its overlays, frame them. */
+  private focusOn(players: string[], frameId: number, overlays: Overlay[]): void {
+    this.scene.setHighlight(players);
+    this.scene.setLabel(players[0] ?? null, players[0] ? shortLabel(this.bundle, players[0]) : undefined);
+    const points = players.map((p) => positionAt(this.bundle, p, frameId)).filter((p): p is Vec2 => p !== null);
+    this.scene.focus([...points, ...overlayPoints(overlays)]);
+  }
+
+  /** Story: show one step (called by Story on every step change). */
+  showStep(step: StoryStep): void {
+    this.view = "story";
+    this.active = step.contribution_id;
+    const target = this.clock.frameIds.indexOf(step.frame_id);
+    const lead = Math.round(LEAD_IN_S * this.clock.fps);
+    const ahead = target - this.clock.pos;
+    this.clock.pause();
+    if (!(ahead > 0 && ahead <= CONTINUE_WITHIN_S * this.clock.fps)) this.clock.seekIndex(Math.max(target - lead, 0));
+    this.clock.setSpeed(this.story.speed);
+    this.clock.playTo(target);
+    const overlays = stepOverlays(this.bundle, step, this.mode);
+    this.pending = this.clock.playing ? overlays : null;
+    this.scene.setOverlays(this.clock.playing ? [] : overlays); // already at the frame: draw now
+    this.focusOn(stepPlayers(this.bundle, step), step.frame_id, overlays);
+  }
+
+  /** Explore: jump to a contribution: pause, seek to its frame, focus its players, draw it, frame them. */
   jump(id: string): void {
     const frameId = this.jumps.get(id);
     if (frameId === undefined) throw new Error(`no jump frame for ${id}`);
     const c = contribution(this.bundle, id);
+    this.story.pause();
     this.clock.pause();
     this.clock.seekFrame(frameId);
     this.active = id;
-    const players = highlightedPlayers(c);
-    this.scene.setHighlight(players);
-    const overlays = overlaysFor(this.bundle, id);
+    this.pending = null;
+    const overlays = overlaysFor(this.bundle, id, this.mode);
     this.scene.setOverlays(overlays);
-    // Frame the named players and what this fact draws (the outcome's track is always drawn; leave it out).
-    const own = overlays.slice(outcomeOverlays(this.bundle).length);
-    const points = players.map((p) => positionAt(this.bundle, p, frameId)).filter((p): p is Vec2 => p !== null);
-    this.scene.focus([...points, ...overlayPoints(own)]);
+    this.focusOn(highlightedPlayers(c), frameId, overlays);
     this.scene.update(this.samples());
   }
 
@@ -70,18 +114,36 @@ export class Viewer {
     return rows[next].id;
   }
 
-  /** Jump to a player's highest-ranked contribution (if the account names them in one). */
-  selectPlayer(playerId: string): string | null {
-    const c = this.bundle.account.contributions.find((x) => x.player_id === playerId);
-    if (!c) return null;
-    this.jump(c.contribution_id);
-    return c.contribution_id;
+  /** Switch Story / Explore. Explore keeps what is on the pitch; Story resumes at its step (or the title card). */
+  setView(view: View): void {
+    this.view = view;
+    if (view === "explore") {
+      this.story.pause();
+      return;
+    }
+    const step = this.story.current;
+    if (step) this.showStep(step);
+    else this.clear();
   }
 
-  /** Back to the plain replay: no highlight, only the outcome drawn. */
+  /** Analyst / Fan changes the words and numbers, never the facts: redraw what is up in the new register. */
+  setMode(mode: Mode): void {
+    this.mode = mode;
+    if (this.view === "story" && this.story.current) {
+      const overlays = stepOverlays(this.bundle, this.story.current, mode);
+      if (this.pending) this.pending = overlays;
+      else this.scene.setOverlays(overlays);
+    } else if (this.view === "explore" && this.active) {
+      this.scene.setOverlays(overlaysFor(this.bundle, this.active, mode));
+    }
+  }
+
+  /** The plain replay: nobody in focus, nothing drawn, the camera on the whole move. */
   clear(): void {
     this.active = null;
+    this.pending = null;
     this.scene.setHighlight([]);
-    this.scene.setOverlays(outcomeOverlays(this.bundle));
+    this.scene.setLabel(null);
+    this.scene.setOverlays([]);
   }
 }

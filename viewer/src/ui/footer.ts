@@ -1,46 +1,66 @@
-// Footer: transport (play/pause, previous/next evidence, speed), the timeline, Live (not connected), match time.
+// Footer: transport, speed, the timeline, and the match time.
 //
-// The timeline has two rows. The match strip spans the whole match with a marker per exported moment
-// (click to open it) and the replayed window highlighted. Under it, the scrubber spans the window we
-// have tracking for, with a marker per piece of evidence (click to jump) and a bubble at the playhead.
+// In Story the transport plays the guided analysis (◀ / ▶ step through it, speed sets the dwell); in Explore
+// it plays the replay (◀ / ▶ jump between facts). The timeline has two rows: the match strip spans the
+// whole match with a marker per exported moment (click to open it) and the replayed window highlighted;
+// under it, the scrubber spans the window we have tracking for, with a marker per fact (click to jump).
 
 import { evidenceRows, matchClock } from "../account";
 import type { Viewer } from "../controller";
 import { button, el, icon, mmss } from "./dom";
+import type { UIState } from "./state";
 
 export interface FooterHandle {
   sync(): void;
-  onJump(fn: () => void): void;
 }
+
+export const SPEEDS = [0.5, 1, 1.5, 2];
 
 function clockSeconds(text: string): number {
   const [m, s] = text.split(":").map(Number);
   return 60 * m + s;
 }
 
-export function buildFooter(root: HTMLElement, viewer: Viewer, onPick: ((id: string) => void) | undefined): FooterHandle {
-  const { bundle, clock } = viewer;
-  const jumped: (() => void)[] = [];
-  const afterJump = () => jumped.forEach((f) => f());
+export interface FooterActions {
+  onPick?: (momentId: string) => void;
+  jump(id: string): void; // a fact, in Explore
+  afterJump(): void; // the viewer jumped by itself (◀ / ▶ in Explore)
+  scrub(): void; // the user took the playhead: leave Story
+}
+
+export function buildFooter(root: HTMLElement, viewer: Viewer, state: UIState, actions: FooterActions): FooterHandle {
+  const { bundle, clock, story } = viewer;
   root.replaceChildren();
 
   const transport = el("div", "rr-transport");
-  const play = button("rr-play", "Play", icon("play", 22));
-  play.addEventListener("click", () => clock.toggle());
-  const prev = button("rr-step", "Previous evidence", icon("prev", 16));
-  prev.addEventListener("click", () => { viewer.stepEvidence(-1); afterJump(); });
-  const next = button("rr-step", "Next evidence", icon("next", 16));
-  next.addEventListener("click", () => { viewer.stepEvidence(1); afterJump(); });
+  const prev = button("rr-step", "Previous step", icon("prev", 14));
+  const play = button("rr-play", "Play analysis", icon("play", 18));
+  const next = button("rr-step", "Next step", icon("next", 14));
+  const stepBy = (dir: 1 | -1) => {
+    if (state.view === "story") {
+      if (dir > 0) story.next();
+      else story.prev();
+      return;
+    }
+    viewer.stepEvidence(dir);
+    actions.afterJump();
+  };
+  prev.addEventListener("click", () => stepBy(-1));
+  next.addEventListener("click", () => stepBy(1));
+  play.addEventListener("click", () => (state.view === "story" ? story.toggle() : clock.toggle()));
   const speed = el("select", "rr-speed");
   speed.setAttribute("aria-label", "speed");
-  for (const s of [0.25, 0.5, 1, 2]) {
-    const o = el("option", undefined, `${s}x`);
+  for (const s of SPEEDS) {
+    const o = el("option", undefined, `${s}×`);
     o.value = String(s);
     o.selected = s === 1;
     speed.append(o);
   }
-  speed.addEventListener("change", () => clock.setSpeed(Number(speed.value)));
-  transport.append(play, prev, next, speed);
+  speed.addEventListener("change", () => {
+    story.setSpeed(Number(speed.value));
+    clock.setSpeed(Number(speed.value));
+  });
+  transport.append(prev, play, next, speed);
 
   // match strip
   const timeline = el("div", "rr-timeline");
@@ -59,11 +79,9 @@ export function buildFooter(root: HTMLElement, viewer: Viewer, onPick: ((id: str
                         `${m.type.replace(/_/g, " ")} at ${m.match_clock}`, "");
     mark.dataset.moment = m.moment_id;
     mark.style.left = `${(100 * clockSeconds(m.match_clock)) / total}%`;
-    if (!current) mark.addEventListener("click", () => onPick?.(m.moment_id));
+    if (!current) mark.addEventListener("click", () => actions.onPick?.(m.moment_id));
     strip.append(mark);
   }
-  const stripLabels = el("div", "rr-strip-labels");
-  stripLabels.append(el("span", undefined, "00:00"), el("span", undefined, mmss(total)));
 
   // window scrubber
   const track = el("div", "rr-track");
@@ -74,45 +92,48 @@ export function buildFooter(root: HTMLElement, viewer: Viewer, onPick: ((id: str
   scrub.step = "0.01";
   scrub.setAttribute("aria-label", "timeline");
   scrub.addEventListener("input", () => {
+    actions.scrub();
     clock.pause();
     clock.seekIndex(Number(scrub.value));
   });
   const span = Math.max(ts[ts.length - 1] - ts[0], 1e-6);
   for (const r of evidenceRows(bundle)) {
     const m = button(`rr-tl-marker ${r.headline ? "rr-headline" : r.positive ? "rr-pos" : "rr-neg"}`,
-                     `${r.number}. ${r.title} (${r.valueText}) at ${r.clock}`, "");
+                     `${r.number}. ${r.player}: ${r.gloss} (${r.clock})`, "");
     m.dataset.id = r.id;
     m.style.left = `${(100 * (Math.min(Math.max(r.t, ts[0]), ts[ts.length - 1]) - ts[0])) / span}%`;
-    m.addEventListener("click", () => { viewer.jump(r.id); afterJump(); });
+    m.addEventListener("click", () => actions.jump(r.id));
     track.append(m);
   }
-  const bubble = el("div", "rr-bubble");
-  track.append(scrub, bubble);
-  const ticks = el("div", "rr-ticks");
-  ticks.append(el("span", undefined, matchClock(bundle, ts[0])), el("span", undefined, matchClock(bundle, ts[ts.length - 1])));
-  timeline.append(strip, stripLabels, track, ticks);
+  track.append(scrub);
+  const ends = el("div", "rr-ticks");
+  ends.append(el("span", undefined, matchClock(bundle, ts[0])), el("span", undefined, `of ${mmss(total)}`),
+              el("span", undefined, matchClock(bundle, ts[ts.length - 1])));
+  timeline.append(strip, track, ends);
 
-  const live = el("label", "rr-live");
-  live.title = "Live feed not connected: this is a replay";
-  const liveBox = el("input");
-  liveBox.type = "checkbox";
-  liveBox.disabled = true;
-  live.append(el("span", undefined, "Live"), liveBox);
   const readout = el("div", "rr-readout");
   const now = el("strong", "rr-now");
-  readout.append(el("span", undefined, "Match time"), now);
-  root.append(transport, timeline, live, readout);
+  readout.append(el("span", "rr-micro", "Match time"), now);
+  root.append(transport, timeline, readout);
 
+  let shown = "";
   const sync = () => {
-    play.innerHTML = icon(clock.playing ? "pause" : "play", 22);
-    play.title = clock.playing ? "Pause" : "Play";
+    const playing = state.view === "story" ? story.playing : clock.playing;
+    const label = state.view === "story" ? (playing ? "Pause analysis" : "Play analysis") : playing ? "Pause" : "Play";
+    if (label !== shown) {
+      play.innerHTML = icon(playing ? "pause" : "play", 18);
+      play.title = label;
+      play.setAttribute("aria-label", label);
+      prev.title = state.view === "story" ? "Previous step" : "Previous fact";
+      next.title = state.view === "story" ? "Next step" : "Next fact";
+      shown = label;
+    }
     scrub.value = String(clock.pos);
-    const text = matchClock(bundle, clock.time);
-    bubble.textContent = text;
-    bubble.style.left = `${(100 * clock.pos) / Math.max(clock.last, 1)}%`;
-    now.textContent = text;
+    now.textContent = matchClock(bundle, clock.time);
   };
   clock.onChange(sync);
+  story.onChange(sync);
+  state.onChange(sync);
   sync();
-  return { sync, onJump: (fn) => jumped.push(fn) };
+  return { sync };
 }

@@ -7,7 +7,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   base: "./",
   publicDir: process.env.BUNDLES_DIR ?? "../data/accounts",
-  assetsInclude: ["**/*.glb"], // the player model is bundled as a static asset
   build: { outDir: "dist", chunkSizeWarningLimit: 1500 },
   test: { environment: "node", include: ["test/**/*.test.ts"] },
 });

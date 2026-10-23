@@ -1,15 +1,17 @@
-// Entry point: load the index and a bundle (?moment=<id>; default: the first prevented moment), build the
-// shell, pre-select the headline (or ?jump=<contribution>), then load the player model and play.
+// Entry point: load the index and a bundle (?moment=<id>; default: the first prevented moment), build the shell,
+// and open Story Mode on its title card, the camera framed on the whole move.
+//
+// URL parameters: ?mode=fan, ?view=explore, ?jump=<contribution> (Explore, at that fact),
+// ?step=<n> (Story, paused at step n, 1-based), ?play=1 (start the analysis).
 
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { CreateScreenshot } from "@babylonjs/core/Misc/screenshotTools";
 
 import { type IndexEntry, loadBundle } from "./bundle";
 import { Viewer } from "./controller";
+import type { Vec2 } from "./overlays";
 import { PitchScene } from "./scene";
 import { buildUI } from "./ui";
-
-const MODEL_URL = new URL("../assets/kenney-character-male-a.glb", import.meta.url).href;
 
 function byId(id: string): HTMLElement {
   const e = document.getElementById(id);
@@ -36,43 +38,54 @@ async function start(): Promise<void> {
     return;
   }
   const bundle = await loadBundle(url);
-  const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, antialias: true });
+  engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 2));
   const scene = new PitchScene(engine, bundle, { labels: true });
   scene.camera.attachControl(canvas, true);
   const viewer = new Viewer(bundle, scene);
   const open = (id: string) => {
     params.set("moment", id);
-    params.delete("bundle");
-    params.delete("jump");
+    for (const k of ["bundle", "jump", "step", "play"]) params.delete(k);
     location.search = params.toString();
   };
+  // the whole move: every action of the chain, start and end
+  const move: Vec2[] = bundle.events.flatMap((e) => [e.start, e.end]);
+  const overview = () => scene.focus(move, 1.5);
   const ui = buildUI(
-    { topbar: byId("topbar"), rail: byId("rail"), stage: byId("stage-ui"), side, footer: byId("footer") },
+    { topbar: byId("topbar"), stage: byId("stage-ui"), ribbon: byId("ribbon"), side, footer: byId("footer") },
     viewer,
     {
       moments,
       onPick: open,
       mode: params.get("mode") === "fan" ? "fan" : "analyst",
+      view: params.get("view") === "explore" || params.has("jump") ? "explore" : "story",
       stage: {
         set2D: (on) => scene.set2D(on),
         resetView: () => scene.resetView(),
         toggleAutoRotate: () => scene.toggleAutoRotate(),
         screenshot: () => CreateScreenshot(engine, scene.camera, { precision: 1 }),
-        frameSelection: () => (viewer.active ? viewer.jump(viewer.active) : scene.resetView()),
-        heading: () => scene.heading,
+        frameSelection: () => {
+          const step = viewer.story.current;
+          if (viewer.view === "story" && step) viewer.showStep(step);
+          else if (viewer.active) viewer.jump(viewer.active);
+          else overview();
+        },
       },
     },
   );
-  viewer.jump(params.get("jump") ?? bundle.account.headline_contribution_id);
-  document.querySelector<HTMLButtonElement>(`.rr-evidence-row[data-id="${viewer.active}"]`)?.classList.add("rr-active");
+  overview();
+  const jump = params.get("jump");
+  const step = Number(params.get("step"));
+  if (jump) viewer.jump(jump);
+  else if (step >= 1) viewer.story.goto(step - 1);
+  if (params.get("play") === "1") viewer.story.play();
   engine.runRenderLoop(() => {
-    viewer.frame(engine.getDeltaTime() / 1000);
+    viewer.frame(Math.min(engine.getDeltaTime() / 1000, 0.1));
     ui.sync();
     scene.render();
   });
   window.addEventListener("resize", () => engine.resize());
-  void scene.useModel(MODEL_URL).then(() => viewer.frame(0));
-  (window as unknown as { replayRoom: unknown }).replayRoom = { viewer, scene, bundle };
+  (window as unknown as { replayRoom: unknown }).replayRoom = { viewer, scene, bundle, ui };
 }
 
 start().catch((err: unknown) => {

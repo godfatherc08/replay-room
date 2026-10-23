@@ -1,22 +1,37 @@
 import { describe, expect, it } from "vitest";
 import { positionAt } from "../src/bundle";
-import { COLORS, contributionOverlays, counterfactualOverlays, outcomeOverlays, overlaysFor } from "../src/overlays";
+import { COLORS, contributionOverlays, counterfactualOverlays, kitOf, outcomeOverlays, overlaysFor, stepOverlays,
+         teamColor } from "../src/overlays";
 import { fixture } from "./helpers";
 
 describe("overlays", () => {
-  it("draws the counterfactual as chosen vs better arrows from the ball, with the account's values", () => {
+  it("draws the counterfactual as a solid chosen arrow and a dashed better arrow from the ball", () => {
     const b = fixture();
     const cf = b.account.counterfactuals[0];
-    const [chosen, best] = counterfactualOverlays(b, cf);
+    const [chosen, best] = counterfactualOverlays(b, cf, "analyst");
     const ball = positionAt(b, "ball", cf.decision_frame.frame_id);
-    expect(chosen).toMatchObject({ type: "arrow", from: ball, color: COLORS.pass, dashed: true,
-                                   label: `chosen: ${cf.chosen} ${cf.chosen_value.toFixed(3)}` });
+    expect(chosen).toMatchObject({ type: "arrow", from: ball, color: COLORS.chosen, dashed: false,
+                                   label: `Chosen · ${cf.chosen_value.toFixed(3)}` });
     const target = positionAt(b, cf.alternatives[0].target_player_id!, cf.decision_frame.frame_id);
-    expect(best).toMatchObject({ type: "arrow", from: ball, to: target, color: COLORS.better });
-    expect(best.type === "arrow" && best.label).toContain(cf.alternatives[0].value.toFixed(3));
-    const drawn = overlaysFor(b, cf.contribution_id);
-    expect(drawn).toEqual(expect.arrayContaining([chosen, best]));
-    expect(drawn).not.toEqual(expect.arrayContaining(contributionOverlays(b, cf.contribution_id))); // not drawn twice
+    expect(best).toMatchObject({ type: "arrow", from: ball, to: target, color: COLORS.better, dashed: true,
+                                 label: `Better option · ${cf.alternatives[0].value.toFixed(3)}` });
+    const fan = counterfactualOverlays(b, cf, "fan");
+    expect(fan.map((o) => (o.type === "arrow" ? o.label : null))).toEqual(["Chosen", "Better option"]);
+    expect(overlaysFor(b, cf.contribution_id)).toEqual(counterfactualOverlays(b, cf));
+  });
+
+  it("puts no metric tag on the pitch outside the decision", () => {
+    const b = fixture();
+    for (const step of b.story.filter((s) => s.kind !== "counterfactual")) {
+      for (const o of stepOverlays(b, step, "analyst")) expect("label" in o ? o.label : undefined).toBeUndefined();
+    }
+  });
+
+  it("a story step draws only its own fact; the counterfactual waits for its own beat", () => {
+    const b = fixture();
+    const assist = b.story.find((s) => s.kind === "contribution" && s.contribution_id === "a161")!;
+    expect(stepOverlays(b, assist)).toEqual(contributionOverlays(b, "a161"));
+    expect(stepOverlays(b, b.story.find((s) => s.kind === "outcome")!)).toEqual(outcomeOverlays(b));
   });
 
   it("ends a prevented shot at what denied it, never at a goal", () => {
@@ -25,8 +40,6 @@ describe("overlays", () => {
     const shot = b.events.find((e) => e.action_id === b.account.outcome.ref.action_id)!;
     expect(o[0]).toMatchObject({ type: "arrow", from: shot.start, to: shot.end, color: COLORS.shot, dashed: false });
     expect(o[1]).toMatchObject({ type: "cross", color: COLORS.denied });
-    expect(o[1].type === "cross" && o[1].label).toMatch(/^denied/);
-    expect(JSON.stringify(o)).not.toContain("goal ·");
   });
 
   it("shades the space at the key spot for an off-ball fact, from the observed run", () => {
@@ -47,17 +60,27 @@ describe("overlays", () => {
     const man = "EPA-11";
     Object.assign(c, {
       kind: "marking_break", signal: "stopped_tracking_runner",
-      metrics: { ...c.metrics, separation_start: 1.8, separation_end: 5.2 },
       evidence: [{ kind: "frame", frame_id: frame, timestamp: 0, player_ids: [c.player_id, man] }],
     });
     const line = contributionOverlays(b, c.contribution_id).find((x) => x.type === "line")!;
-    expect(line).toMatchObject({ a: positionAt(b, c.player_id, frame), b: positionAt(b, man, frame) });
-    expect(line.type === "line" && line.label).toContain("separation 1.8 → 5.2 m");
+    expect(line).toMatchObject({ a: positionAt(b, c.player_id, frame), b: positionAt(b, man, frame), color: COLORS.marking });
   });
 
   it("draws an on-ball action from where it started to where it ended", () => {
     const b = fixture();
     const pass = b.events.find((e) => e.action_id === 161)!;
     expect(contributionOverlays(b, "a161")[0]).toMatchObject({ type: "arrow", from: pass.start, to: pass.end });
+  });
+
+  it("dresses players in their team's kit and keepers in their own", () => {
+    const b = fixture();
+    const home = b.teams.find((t) => t.side === "home")!;
+    const away = b.teams.find((t) => t.side === "away")!;
+    expect(teamColor(b, home.team_id)).toBe(home.kit.shirt);
+    expect(teamColor(b, home.team_id)).not.toBe(teamColor(b, away.team_id));
+    const outfield = b.objects.find((o) => o.team_id === home.team_id && !b.goalkeepers.includes(o.id))!;
+    const keeper = b.goalkeepers.find((id) => b.objects.find((o) => o.id === id)?.team_id === home.team_id)!;
+    expect(kitOf(b, outfield.id)).toEqual({ shirt: home.kit.shirt, shorts: home.kit.shorts });
+    expect(kitOf(b, keeper).shirt).toBe(home.kit.keeper);
   });
 });

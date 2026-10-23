@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { evidenceRows, highlightedPlayers, matchClock } from "../src/account";
+import { evidenceRows, highlightedPlayers, matchClock, stepPlayers } from "../src/account";
 import { type SceneLike, Viewer } from "../src/controller";
 import type { Sample } from "../src/motion";
-import type { Overlay, Vec2 } from "../src/overlays";
+import { type Overlay, stepOverlays, type Vec2 } from "../src/overlays";
 import { buildUI } from "../src/ui";
 import { fixture } from "./helpers";
 
 class FakeScene implements SceneLike {
   samples = new Map<string, Sample | null>();
   highlighted: string[] = [];
+  label: [string | null, string | undefined] = [null, undefined];
   overlays: Overlay[] = [];
   focused: Vec2[] = [];
   update(s: Map<string, Sample | null>) {
@@ -17,6 +18,9 @@ class FakeScene implements SceneLike {
   }
   setHighlight(ids: string[]) {
     this.highlighted = ids;
+  }
+  setLabel(id: string | null, text?: string) {
+    this.label = [id, text];
   }
   setOverlays(o: Overlay[]) {
     this.overlays = o;
@@ -27,8 +31,13 @@ class FakeScene implements SceneLike {
   step() {}
 }
 
-describe("viewer", () => {
-  it("jumping to a contribution seeks to its frame, highlights its players and frames them", () => {
+/** Run the viewer's frame loop for this many seconds of wall time. */
+function run(v: Viewer, seconds: number, dt = 1 / 30) {
+  for (let t = 0; t < seconds; t += dt) v.frame(dt);
+}
+
+describe("viewer: Explore", () => {
+  it("jumping to a contribution seeks to its frame, focuses its players, names the first, and frames them", () => {
     const b = fixture();
     const scene = new FakeScene();
     const v = new Viewer(b, scene);
@@ -39,6 +48,7 @@ describe("viewer", () => {
       expect(v.clock.frameId).toBe(frame);
       expect(v.clock.playing).toBe(false);
       expect(scene.highlighted).toEqual(highlightedPlayers(c));
+      expect(scene.label[0]).toBe(c.player_id);
       expect(scene.focused.length).toBeGreaterThan(0);
     }
   });
@@ -61,106 +71,217 @@ describe("viewer", () => {
   });
 });
 
+describe("viewer: Story", () => {
+  it("opens with nothing drawn and nobody in focus", () => {
+    const scene = new FakeScene();
+    const v = new Viewer(fixture(), scene);
+    expect(v.story.state).toBe("ready");
+    expect(scene.overlays).toEqual([]);
+    expect(scene.highlighted).toEqual([]);
+  });
+
+  it("each step leads the replay into its frame, then draws that step's overlay alone", () => {
+    const b = fixture();
+    const scene = new FakeScene();
+    const v = new Viewer(b, scene);
+    v.story.goto(0);
+    const step = b.story[0];
+    expect(scene.highlighted).toEqual(stepPlayers(b, step));
+    expect(v.clock.playing).toBe(true); // the lead-in
+    expect(scene.overlays).toEqual([]);
+    run(v, 2);
+    expect(v.clock.frameId).toBe(step.frame_id);
+    expect(scene.overlays).toEqual(stepOverlays(b, step));
+  });
+
+  it("plays the whole account in order and climaxes on the outcome and the counterfactual", () => {
+    const b = fixture();
+    const scene = new FakeScene();
+    const v = new Viewer(b, scene);
+    const seen: number[] = [];
+    v.story.onChange((s) => (seen.at(-1) !== s.index ? seen.push(s.index) : 0));
+    v.story.play();
+    run(v, 120, 0.1);
+    expect(seen).toEqual(b.story.map((s) => s.index));
+    expect(v.story.state).toBe("done");
+    const last = b.story.at(-1)!;
+    expect(last.kind).toBe("counterfactual");
+    expect(v.clock.frameId).toBe(last.frame_id);
+    expect(scene.overlays).toEqual(stepOverlays(b, last, "analyst"));
+    expect(scene.highlighted).toEqual(["EPA-08", "EPA-09"]);
+  });
+
+  it("Fan mode redraws the decision without values", () => {
+    const b = fixture();
+    const scene = new FakeScene();
+    const v = new Viewer(b, scene);
+    v.story.goto(b.story.length - 1);
+    run(v, 3);
+    v.setMode("fan");
+    const labels = scene.overlays.map((o) => ("label" in o ? o.label : undefined)).filter(Boolean);
+    expect(labels).toEqual(["Chosen", "Better option"]);
+  });
+});
+
 function shell(b = fixture(), opts: Parameters<typeof buildUI>[2] = {}) {
   const v = new Viewer(b, new FakeScene());
-  const roots = { topbar: div(), rail: div(), stage: div(), side: div(), footer: div() };
-  const memory = new Map<string, string>();
-  const storage = { getItem: (k: string) => memory.get(k) ?? null, setItem: (k: string, x: string) => void memory.set(k, x) };
-  const ui = buildUI(roots, v, { storage, ...opts });
-  const all = () => Object.values(roots).map((r) => r.textContent ?? "").join(" ");
-  return { b, v, roots, ui, all, memory };
+  const roots = { topbar: div(), stage: div(), ribbon: div(), side: div(), footer: div() };
+  const ui = buildUI(roots, v, opts);
+  return { b, v, roots, ui };
 }
 
 function div(): HTMLDivElement {
   return document.createElement("div");
 }
 
+function texts(root: HTMLElement): string[] {
+  const out: string[] = [];
+  const nodes = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = nodes.nextNode(); n; n = nodes.nextNode()) out.push(n.textContent ?? "");
+  return out;
+}
+
 describe("app shell", () => {
-  it("binds the header, evidence and summary to the bundle", () => {
+  it("opens on the title card: class, outcome, the narration's line, and Play analysis", () => {
     const { b, roots } = shell();
-    const side = roots.side;
-    expect(side.querySelector(".rr-moment-class")!.textContent).toBe("BIG CHANCE SAVED");
-    expect(side.querySelector(".rr-chip")!.textContent).toBe("PREVENTED");
-    expect(side.querySelector(".rr-moment-meta")!.textContent).toBe(`xG ${b.account.outcome.value.toFixed(3)} · ${b.match.moment_clock}`);
-    expect(side.querySelector(".rr-desc")!.textContent).toBe(b.narration!.headline_text);
-    const rows = [...side.querySelectorAll<HTMLButtonElement>(".rr-evidence-row")];
-    expect(rows.map((r) => r.dataset.id)).toEqual(evidenceRows(b).map((r) => r.id));
-    const head = rows.filter((r) => r.classList.contains("rr-headline"));
-    expect(head.map((r) => r.dataset.id)).toEqual([b.account.headline_contribution_id]);
-    const lead = b.narration!.sentences.slice(0, 3).map((s) => s.text).join(" ");
-    expect(side.querySelector(".rr-summary-text")!.textContent).toBe(lead);
-    expect(roots.topbar.querySelector(".rr-team-name")!.textContent).toBe(b.match.home.name);
+    const card = roots.stage.querySelector<HTMLElement>(".rr-title-card")!;
+    expect(card.hidden).toBe(false);
+    expect(roots.stage.querySelector<HTMLElement>(".rr-step-card")!.hidden).toBe(true);
+    expect(card.querySelector(".rr-class-chip")!.textContent).toBe("BIG CHANCE SAVED");
+    expect(card.querySelector(".rr-display")!.textContent).toBe("A goal that didn't happen");
+    expect(card.querySelector(".rr-lede")!.textContent).toBe(b.narration!.headline_text);
+    expect(card.querySelector(".rr-cta")!.textContent).toBe("Play analysis");
+  });
+
+  it("Play analysis swaps the title card for the step card: caption, gloss and meter, ribbon advancing", () => {
+    const { b, v, roots, ui } = shell();
+    roots.stage.querySelector<HTMLButtonElement>(".rr-cta")!.click();
+    expect(v.story.playing).toBe(true);
+    const card = roots.stage.querySelector<HTMLElement>(".rr-step-card")!;
+    expect(card.hidden).toBe(false);
+    expect(card.querySelector(".rr-caption")!.textContent).toBe(b.story[0].caption);
+    expect(card.querySelector(".rr-gloss")!.textContent).toBe(b.meaning.find((m) => m.contribution_id === b.story[0].contribution_id)!.gloss);
+    expect(card.querySelectorAll(".rr-meter")).toHaveLength(1);
+    expect(card.querySelector(".rr-counter")!.textContent).toBe(`Step 1 of ${b.story.length}`);
+    run(v, 3.2);
+    ui.sync();
+    expect(v.story.index).toBe(1);
+    const nodes = [...roots.ribbon.querySelectorAll(".rr-node")];
+    expect(nodes).toHaveLength(b.story.length);
+    expect(nodes[0].classList.contains("rr-done")).toBe(true);
+    expect(nodes[1].classList.contains("rr-current")).toBe(true);
+    expect(parseFloat(roots.ribbon.querySelector<HTMLElement>(".rr-ribbon-fill")!.style.width)).toBeGreaterThan(0);
+  });
+
+  it("the ribbon has one node per step, marks the headline, and a click shows that step", () => {
+    const { b, v, roots, ui } = shell();
+    ui.state.setView("explore");
+    const nodes = [...roots.ribbon.querySelectorAll<HTMLElement>(".rr-node")];
+    const head = b.story.findIndex((s) => s.kind === "contribution" && s.contribution_id === b.account.headline_contribution_id);
+    expect(nodes.map((n, i) => (n.classList.contains("rr-headline") ? i : -1)).filter((i) => i >= 0)).toEqual([head]);
+    nodes[4].querySelector<HTMLButtonElement>("button")!.click();
+    expect(ui.state.view).toBe("story");
+    expect(v.story.index).toBe(4);
+    expect(v.active).toBe(b.story[4].contribution_id);
+  });
+
+  it("Fan mode shows no raw metric anywhere; Analyst shows them as secondary text", () => {
+    const { b, roots, ui } = shell(fixture(), { mode: "fan" });
+    ui.state.setView("explore"); // the open chain: every fact's row
+    const step = b.story.length - 1;
+    const fanText = () => Object.values(roots).flatMap(texts).join(" ").replace(/\d(\.\d)?×/g, ""); // speeds are not metrics
+    expect(roots.side.querySelectorAll(".rr-row")).toHaveLength(b.account.contributions.length);
+    expect(fanText()).not.toMatch(/\d\.\d/);
+    expect(roots.side.querySelectorAll(".rr-metric")).toHaveLength(0);
+    ui.state.setView("story");
+    roots.ribbon.querySelectorAll<HTMLButtonElement>(".rr-node-btn")[step].click();
+    expect(fanText()).not.toMatch(/\d\.\d/);
+    ui.state.setMode("analyst");
+    expect(roots.stage.querySelectorAll(".rr-step-card .rr-metric")).toHaveLength(2);
+    expect(roots.stage.querySelector(".rr-step-card .rr-metric")!.textContent).toMatch(/^option value 0\.113/);
+  });
+
+  it("every value in the chain is a meter with a gloss", () => {
+    const { roots, ui } = shell();
+    ui.state.setView("explore");
+    for (const row of roots.side.querySelectorAll(".rr-row")) {
+      expect(row.querySelector(".rr-meter")).not.toBeNull();
+      expect(row.querySelector(".rr-row-gloss")!.textContent).not.toBe("");
+    }
   });
 
   it("shows no number the bundle does not contain", () => {
-    const { b, roots } = shell();
-    const allowed = new Set<string>();
-    const add = (v: number) => { for (const d of [0, 1, 2, 3]) allowed.add(Math.abs(v).toFixed(d)); };
-    const walk = (x: unknown): void => {
-      if (typeof x === "number") add(x);
-      else if (typeof x === "string") (x.match(/\d+(?:\.\d+)?/g) ?? []).forEach((s) => allowed.add(s));
-      else if (x && typeof x === "object") Object.values(x).forEach(walk);
-    };
-    walk(b);
-    const chrome = new Set(["0.25", "0.5", "1", "2", ...evidenceRows(b).map((r) => String(r.number))]); // speeds, row ordinals
-    const strangers: string[] = [];
-    for (const root of Object.values(roots)) {
-      const nodes = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      for (let n = nodes.nextNode(); n; n = nodes.nextNode()) {
-        let text = n.textContent ?? "";
-        for (const clock of text.match(/\b\d{2}:\d{2}\b/g) ?? []) {  // match clocks: must lie within the match
-          const [m, s] = clock.split(":").map(Number);
-          if (60 * m + s > b.match.duration_s) strangers.push(clock);
+    for (const mode of ["analyst", "fan"] as const) {
+      const { b, roots, ui } = shell(fixture(), { mode });
+      ui.state.setView("explore");
+      const allowed = new Set<string>();
+      const add = (v: number) => { for (const d of [0, 1, 2, 3]) allowed.add(Math.abs(v).toFixed(d)); };
+      const walk = (x: unknown): void => {
+        if (typeof x === "number") add(x);
+        else if (typeof x === "string") (x.match(/\d+(?:\.\d+)?/g) ?? []).forEach((s) => allowed.add(s));
+        else if (x && typeof x === "object") Object.values(x).forEach(walk);
+      };
+      walk(b);
+      const chrome = new Set(["0.5", "1", "1.5", "2", "2D", "3D", ...b.story.map((s) => String(s.index + 1))]); // speeds, steps
+      const strangers: string[] = [];
+      for (const story of [false, true]) {
+        if (story) {
+          ui.state.setView("story");
+          roots.ribbon.querySelectorAll<HTMLButtonElement>(".rr-node-btn")[b.story.length - 1].click();
         }
-        text = text.replace(/\b\d{2}:\d{2}\b/g, " ");
-        for (const num of text.match(/\d+(?:\.\d+)?/g) ?? []) if (!allowed.has(num) && !chrome.has(num)) strangers.push(num);
+        for (const root of Object.values(roots)) {
+          for (let text of texts(root)) {
+            for (const clock of text.match(/\b\d{2}:\d{2}\b/g) ?? []) {  // match clocks: must lie within the match
+              const [m, s] = clock.split(":").map(Number);
+              if (60 * m + s > b.match.duration_s) strangers.push(clock);
+            }
+            text = text.replace(/\b\d{2}:\d{2}\b/g, " ");
+            for (const num of text.match(/\d+(?:\.\d+)?/g) ?? []) if (!allowed.has(num) && !chrome.has(num)) strangers.push(num);
+          }
+        }
       }
+      expect(strangers).toEqual([]);
     }
-    expect(strangers).toEqual([]);
   });
 
-  it("clicking an evidence row seeks, highlights and marks it, and dismisses the hint", () => {
-    const { v, roots, memory } = shell();
-    const hint = roots.side.querySelector<HTMLElement>(".rr-hint")!;
-    expect(hint.hidden).toBe(false);
-    const row = [...roots.side.querySelectorAll<HTMLButtonElement>(".rr-evidence-row")][2];
+  it("clicking a fact in the chain switches to Explore, seeks, focuses and marks it", () => {
+    const { v, roots, ui } = shell();
+    ui.state.setView("explore");
+    const row = [...roots.side.querySelectorAll<HTMLButtonElement>(".rr-row")][2];
     row.click();
+    expect(ui.state.view).toBe("explore");
     expect(v.clock.frameId).toBe(Number(row.dataset.frame));
     expect(v.active).toBe(row.dataset.id);
     expect(row.classList.contains("rr-active")).toBe(true);
-    expect(hint.hidden).toBe(true);
-    expect(memory.get("replay-room.hint-dismissed")).toBe("1");
     expect(roots.footer.querySelector(".rr-now")!.textContent).toBe(matchClock(v.bundle, v.clock.time));
   });
 
-  it("fan mode is a seam: header and summary only", () => {
+  it("the chain is collapsed in Story and open in Explore", () => {
     const { roots, ui } = shell();
-    ui.state.setMode("fan");
-    expect(roots.side.querySelector(".rr-evidence-row")).toBeNull();
-    expect(roots.side.querySelector(".rr-summary")).not.toBeNull();
-    expect(roots.side.querySelector(".rr-moment")).not.toBeNull();
-    ui.state.setMode("analyst");
-    expect(roots.side.querySelector(".rr-evidence-row")).not.toBeNull();
+    expect(roots.side.querySelector(".rr-row")).toBeNull();
+    roots.side.querySelector<HTMLButtonElement>(".rr-section-toggle")!.click();
+    expect(roots.side.querySelector(".rr-row")).not.toBeNull();
+    ui.state.setView("explore");
+    expect(roots.side.querySelector(".rr-row")).not.toBeNull();
   });
 
   it("leaves out what the bundle lacks", () => {
     const b = fixture();
     b.narration = null;
     b.account.counterfactuals = [];
-    const { roots, ui } = shell(b);
+    const { roots } = shell(b);
     expect(roots.side.querySelector(".rr-summary")).toBeNull();
-    expect(roots.side.querySelector(".rr-desc")).toBeNull();
-    ui.state.setTab("tactics");
-    expect(roots.side.querySelector(".rr-cf")).toBeNull();
+    expect(roots.side.querySelector(".rr-decision")).toBeNull();
+    expect(roots.stage.querySelector(".rr-lede")).toBeNull();
   });
 
-  it("lists the match's moments and opens one on click", () => {
+  it("lists the match's moments and opens one", () => {
     const picked: string[] = [];
     const { b, roots } = shell(fixture(), { onPick: (id) => picked.push(id) });
-    roots.rail.querySelector<HTMLButtonElement>('[data-rail="moments"]')!.click();
-    const items = [...roots.side.querySelectorAll<HTMLButtonElement>(".rr-moment-item")];
-    expect(items).toHaveLength(b.match_moments.length);
-    items.find((i) => !i.disabled)!.click();
+    const picker = roots.topbar.querySelector<HTMLSelectElement>(".rr-picker")!;
+    expect(picker.options).toHaveLength(b.match_moments.length);
+    picker.value = b.match_moments.find((m) => m.moment_id !== b.account.moment.moment_id)!.moment_id;
+    picker.dispatchEvent(new Event("change"));
     expect(picked).toHaveLength(1);
     expect(roots.footer.querySelectorAll(".rr-strip-mark")).toHaveLength(b.match_moments.length);
   });

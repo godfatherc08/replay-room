@@ -1,5 +1,8 @@
-// The 3D scene: a dark striped pitch to scale with goal frames, instanced humanoid players, the ball,
-// overlays, and an orbit camera with broadcast-style tools (2D/3D, heading, auto-rotate, fit, screenshot).
+// The 3D scene: a dark striped pitch to scale with goal frames, instanced player figures in team kits, the
+// ball, one step's overlays, and an orbit camera that eases onto what matters (2D/3D, heading, auto-rotate).
+//
+// Focus: setHighlight rings the players a fact names and dims everyone else; setLabel floats one name tag
+// over one player. Every other player shows only their shirt number.
 //
 // Pitch metres (x along the touchline, y across, origin bottom-left) map to world coordinates
 // (x - L/2, height, y - W/2), so the pitch is centred on the origin.
@@ -19,7 +22,7 @@ import { Scene } from "@babylonjs/core/scene";
 
 import type { Bundle } from "./bundle";
 import type { Sample } from "./motion";
-import { COLORS, type Overlay, teamColor, type Vec2 } from "./overlays";
+import { COLORS, kitOf, type Overlay, type Vec2 } from "./overlays";
 import { PLAYER_HEIGHT, PlayerBodies } from "./players";
 
 export interface SceneOptions {
@@ -29,11 +32,13 @@ export interface SceneOptions {
 interface Marker {
   root: TransformNode; // follows the player: number plate and selection ring
   ring: Mesh | null;
+  plate: Mesh | null; // shirt number
   index: number; // instance index in PlayerBodies (-1 for the ball)
 }
 
 const VIEW_3D = { alpha: -Math.PI / 2, beta: 0.95, radius: 92 };
 const VIEW_2D_BETA = 0.0001;
+const FOCUS_LIFT = 0.12; // share of the camera distance the focus moves towards the camera
 
 export class PitchScene {
   readonly scene: Scene;
@@ -42,6 +47,7 @@ export class PitchScene {
   bodies: PlayerBodies;
   ball: Mesh;
   highlighted: string[] = [];
+  label: { id: string; mesh: Mesh } | null = null;
   overlayMeshes: Mesh[] = [];
   is2D = false;
   private readonly half: Vec2;
@@ -66,27 +72,14 @@ export class PitchScene {
     sun.intensity = 0.55;
     this.buildPitch();
     this.playerIds = bundle.objects.filter((o) => o.kind === "player").map((o) => o.id);
-    this.bodies = PlayerBodies.capsules(this.scene, this.playerIds, this.playerIds.map((id) => this.shirt(id)));
-    this.ball = MeshBuilder.CreateSphere("ball", { diameter: 0.8, segments: 16 }, this.scene);
+    this.bodies = PlayerBodies.create(this.scene, this.playerIds, this.playerIds.map((id) => kitOf(bundle, id)));
+    this.ball = MeshBuilder.CreateSphere("ball", { diameter: 0.6, segments: 16 }, this.scene);
     this.ball.material = this.material("#ffffff", 1, true);
     this.buildMarkers();
   }
 
-  /** Swap the capsules for the humanoid model (falls back to capsules on any failure). */
-  async useModel(url: string): Promise<void> {
-    const bodies = await PlayerBodies.load(this.scene, url, this.playerIds, this.playerIds.map((id) => this.shirt(id)));
-    if (bodies.kind === "capsule") {
-      for (const p of bodies.parts) p.mesh.dispose();
-      return;
-    }
-    for (const p of this.bodies.parts) p.mesh.dispose();
-    this.bodies = bodies;
-  }
-
   shirt(id: string): string {
-    if (this.bundle.goalkeepers.includes(id)) return COLORS.keeper;
-    const o = this.bundle.objects.find((x) => x.id === id);
-    return teamColor(this.bundle, o?.team_id ?? "");
+    return kitOf(this.bundle, id).shirt;
   }
 
   world([x, y]: Vec2, height = 0): Vector3 {
@@ -186,34 +179,48 @@ export class PitchScene {
     for (const o of this.bundle.objects) {
       const root = new TransformNode(`obj-${o.id}`, this.scene);
       let ring: Mesh | null = null;
+      let plate: Mesh | null = null;
       if (o.kind === "player") {
-        ring = MeshBuilder.CreateTorus(`ring-${o.id}`, { diameter: 2.4, thickness: 0.18, tessellation: 40 }, this.scene);
-        ring.position.y = 0.06;
+        ring = MeshBuilder.CreateTorus(`ring-${o.id}`, { diameter: 2.2, thickness: 0.12, tessellation: 48 }, this.scene);
+        ring.position.y = 0.05;
         ring.material = this.material(COLORS.highlight, 1, true);
         ring.parent = root;
         ring.isVisible = false;
         if (this.opts.labels) {
-          const plate = this.textPlane(`n-${o.id}`, String(numbers.get(o.id) ?? o.id), this.shirt(o.id), 1.1, 0.88);
-          plate.position.y = PLAYER_HEIGHT + 0.9;
+          plate = this.textPlane(`n-${o.id}`, String(numbers.get(o.id) ?? o.id), this.shirt(o.id), 0.9);
+          plate.position.y = PLAYER_HEIGHT + 0.55;
           plate.parent = root;
         }
       }
       root.setEnabled(false);
-      this.markers.set(o.id, { root, ring, index: o.kind === "player" ? this.playerIds.indexOf(o.id) : -1 });
+      this.markers.set(o.id, { root, ring, plate, index: o.kind === "player" ? this.playerIds.indexOf(o.id) : -1 });
     }
   }
 
-  private textPlane(name: string, text: string, accent: string, height: number, bgAlpha = 0.78): Mesh {
+  /** A billboard tag: rounded dark pill, white text, a stripe of ``accent`` along the bottom. */
+  private textPlane(name: string, text: string, accent: string, height: number, bgAlpha = 0.82): Mesh {
     const h = 64;
-    const w = Math.max(64, Math.ceil(text.length * 26 + 28));
-    const tex = new DynamicTexture(`${name}-tex`, { width: w, height: h }, this.scene, false);
+    const w = Math.max(64, Math.ceil(text.length * 24 + 36));
+    const tex = new DynamicTexture(`${name}-tex`, { width: w, height: h }, this.scene, true);
     tex.hasAlpha = true;
-    const ctx = tex.getContext();
-    ctx.fillStyle = `rgba(10,16,24,${bgAlpha})`;
-    ctx.fillRect(0, 0, w, h);
+    const ctx = tex.getContext() as CanvasRenderingContext2D;
+    const r = 14;
+    ctx.clearRect(0, 0, w, h);
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.arcTo(w, 0, w, h, r);
+    ctx.arcTo(w, h, 0, h, r);
+    ctx.arcTo(0, h, 0, 0, r);
+    ctx.arcTo(0, 0, w, 0, r);
+    ctx.closePath();
+    ctx.fillStyle = `rgba(9,14,22,${bgAlpha})`;
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
     ctx.fillStyle = accent;
-    ctx.fillRect(0, h - 6, w, 6);
-    tex.drawText(text, null, 42, "600 34px Inter, system-ui, sans-serif", "#f8fafc", null, true);
+    ctx.fillRect(0, h - 7, w, 7);
+    ctx.restore();
+    tex.drawText(text, null, 41, "600 32px Inter, system-ui, sans-serif", "#f8fafc", null, true);
     const mat = new StandardMaterial(`${name}-mat`, this.scene);
     mat.diffuseTexture = tex;
     mat.useAlphaFromDiffuseTexture = true;
@@ -224,6 +231,7 @@ export class PitchScene {
     plane.material = mat;
     plane.billboardMode = TransformNode.BILLBOARDMODE_ALL;
     plane.isPickable = false;
+    plane.renderingGroupId = 1; // drawn over the players, never hidden behind one
     return plane;
   }
 
@@ -248,13 +256,41 @@ export class PitchScene {
     this.bodies.flush();
   }
 
+  /** Ring and light these players; dim everyone else (an empty list lights everyone). */
   setHighlight(ids: string[]): void {
     this.highlighted = [...ids];
-    for (const [id, m] of this.markers) if (m.ring) m.ring.isVisible = ids.includes(id);
+    const on = new Set(ids);
+    this.bodies.setFocus(new Set(ids.map((id) => this.markers.get(id)?.index ?? -1).filter((i) => i >= 0)));
+    for (const [id, m] of this.markers) if (m.ring) m.ring.isVisible = on.has(id);
+    this.refreshPlates();
+  }
+
+  /** Shirt numbers show on the focus only (everyone, when nobody is), and not under the name tag. */
+  private refreshPlates(): void {
+    const all = this.highlighted.length === 0;
+    for (const [id, m] of this.markers) {
+      if (m.plate) m.plate.isVisible = (all || this.highlighted.includes(id)) && this.label?.id !== id;
+    }
+  }
+
+  /** The one floating name tag, over one player (null removes it). */
+  setLabel(id: string | null, text?: string): void {
+    if (this.label && (this.label.id !== id || !text)) {
+      this.label.mesh.dispose(false, true);
+      this.label = null;
+    }
+    const m = id ? this.markers.get(id) : undefined;
+    if (id && text && m && !this.label && this.opts.labels) {
+      const mesh = this.textPlane(`tag-${id}`, text, this.shirt(id), 0.95, 0.92);
+      mesh.position.y = PLAYER_HEIGHT + 0.7;
+      mesh.parent = m.root;
+      this.label = { id, mesh };
+    }
+    this.refreshPlates();
   }
 
   setOverlays(overlays: Overlay[]): void {
-    for (const mesh of this.overlayMeshes) mesh.dispose(false, false);
+    for (const mesh of this.overlayMeshes) mesh.dispose(false, mesh.name.endsWith("-label"));
     this.overlayMeshes = [];
     overlays.forEach((o, i) => this.overlayMeshes.push(...this.drawOverlay(o, `ov${i}`)));
   }
@@ -281,8 +317,8 @@ export class PitchScene {
     const out: Mesh[] = [];
     const label = (text: string | undefined, at: Vec2, color: string) => {
       if (!text || !this.opts.labels) return;
-      const p = this.textPlane(`${name}-label`, text, color, 1.15);
-      p.position = this.world(at, PLAYER_HEIGHT + 2.4);
+      const p = this.textPlane(`${name}-label`, text, color, 0.95);
+      p.position = this.world(at, 1.4);
       out.push(p);
     };
     switch (o.type) {
@@ -309,7 +345,7 @@ export class PitchScene {
         cone.position = shaftEnd.add(dir.scale(head / (2 * len)));
         cone.lookAt(to);
         out.push(cone);
-        label(o.label, [(o.from[0] + o.to[0]) / 2, (o.from[1] + o.to[1]) / 2], o.color);
+        label(o.label, [o.from[0] + 0.7 * (o.to[0] - o.from[0]), o.from[1] + 0.7 * (o.to[1] - o.from[1])], o.color);
         break;
       }
       case "disc": {
@@ -357,13 +393,15 @@ export class PitchScene {
   }
 
   /** Ease the camera onto these pitch points (centroid; zoom to fit their spread). */
-  focus(points: Vec2[]): void {
+  focus(points: Vec2[], fit = 2.1): void {
     if (points.length === 0) return;
     const cx = points.reduce((s, p) => s + p[0], 0) / points.length;
     const cy = points.reduce((s, p) => s + p[1], 0) / points.length;
     const spread = Math.max(...points.map((p) => Math.hypot(p[0] - cx, p[1] - cy)), 6);
-    this.desiredTarget = this.world([cx, cy]);
-    this.desiredRadius = Math.min(Math.max(spread * 2.6, 26), 120);
+    this.desiredRadius = Math.min(Math.max(spread * fit, 24), 110);
+    // nudge the target towards the camera so what is framed sits above the step card at the bottom
+    const k = this.desiredRadius * FOCUS_LIFT;
+    this.desiredTarget = this.world([cx + k * Math.cos(this.camera.alpha), cy + k * Math.sin(this.camera.alpha)]);
   }
 
   /** Whole pitch, broadcast angle (or straight down in 2D). */

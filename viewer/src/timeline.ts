@@ -9,6 +9,7 @@ export class Clock {
   pos = 0; // fractional index into frameIds
   playing = false;
   speed = 1;
+  stopAt: number | null = null; // playTo: pause on reaching this index
   private listeners: ClockListener[] = [];
 
   constructor(frameIds: number[], timestamps: number[], fps: number) {
@@ -48,12 +49,26 @@ export class Clock {
 
   play(): void {
     if (this.pos >= this.last) this.pos = 0;
+    this.stopAt = null;
+    this.playing = true;
+    this.emit();
+  }
+
+  /** Play from the current position up to index i, then pause there (a lead-in to a frame). */
+  playTo(i: number): void {
+    this.stopAt = Math.min(Math.max(i, 0), this.last);
+    if (this.stopAt <= this.pos) {
+      this.seekIndex(this.stopAt);
+      this.stopAt = null;
+      return;
+    }
     this.playing = true;
     this.emit();
   }
 
   pause(): void {
     this.playing = false;
+    this.stopAt = null;
     this.emit();
   }
 
@@ -84,9 +99,11 @@ export class Clock {
   tick(dtSeconds: number): void {
     if (!this.playing) return;
     this.pos += dtSeconds * this.fps * this.speed;
-    if (this.pos >= this.last) {
-      this.pos = this.last;
+    const end = this.stopAt ?? this.last;
+    if (this.pos >= end) {
+      this.pos = end;
       this.playing = false;
+      this.stopAt = null;
     }
     this.emit();
   }

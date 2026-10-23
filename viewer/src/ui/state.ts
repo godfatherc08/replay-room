@@ -1,17 +1,20 @@
-// Shared UI state: the active mode and tab, with listeners. Kept tiny on purpose.
+// Shared UI state: Story / Explore and Analyst / Fan, with listeners. Kept tiny on purpose.
 
-export type Mode = "analyst" | "fan";
-export type Tab = "event" | "tactics" | "metrics" | "players";
+import type { View } from "../controller";
+import type { Mode } from "../overlays";
+
+export type { Mode, View };
 
 type Listener = () => void;
 
 export class UIState {
   mode: Mode;
-  tab: Tab = "event";
+  view: View;
   private listeners: Listener[] = [];
 
-  constructor(mode: Mode = "analyst") {
+  constructor(mode: Mode = "analyst", view: View = "story") {
     this.mode = mode;
+    this.view = view;
   }
 
   onChange(fn: Listener): void {
@@ -23,8 +26,8 @@ export class UIState {
     this.emit();
   }
 
-  setTab(tab: Tab): void {
-    this.tab = tab;
+  setView(view: View): void {
+    this.view = view;
     this.emit();
   }
 

@@ -43,3 +43,22 @@ describe("Clock", () => {
     expect(seen).toEqual([3, 0]);
   });
 });
+
+describe("Clock.playTo", () => {
+  it("plays up to a frame and pauses there", () => {
+    const c = clock();
+    c.playTo(2);
+    expect(c.playing).toBe(true);
+    c.tick(1);
+    expect(c.pos).toBe(2);
+    expect(c.playing).toBe(false);
+  });
+
+  it("seeks straight there when the target is behind", () => {
+    const c = clock();
+    c.seekIndex(3);
+    c.playTo(1);
+    expect(c.pos).toBe(1);
+    expect(c.playing).toBe(false);
+  });
+});
