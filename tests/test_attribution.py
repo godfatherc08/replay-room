@@ -89,10 +89,10 @@ def test_links_are_measured_not_inferred(accounts, match):
     assert link.metrics["spot_distance_end"] - link.metrics["spot_distance_start"] >= 2.0  # he left the zone
     assert link.metrics["closest_approach"] <= 6.0  # the runner went right past him
     for acc in accounts.values():
-        for link in acc.links:
-            d = _by_id(acc)[link.defender_contribution_id]
+        for other in acc.links:
+            d = _by_id(acc)[other.defender_contribution_id]
             assert d.team_id == acc.outcome.conceding_team_id and d.track == "off_ball"
-            assert link.player_ids <= {p.player_id for p in acc.participants}
+            assert other.player_ids <= {p.player_id for p in acc.participants}
     assert not accounts["SYN-0007-goal-3"].links  # no geometric pattern held: no link is asserted
     assert a.outcome.zone == link.zone == "the six-yard box"  # the zone he left is where the shot came from
 
