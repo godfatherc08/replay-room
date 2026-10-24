@@ -5,9 +5,11 @@
 //   in focus (everyone else dimmed), names the first of them, eases the camera onto them and, once the replay
 //   reaches the frame, draws that step's overlay alone.
 // * Explore: free scrubbing; clicking a fact (jump) seeks straight to its frame with the same focus and drawing.
+// * Evidence (either way): opening a claim's proof pauses, seeks to the proof's frame, rings and names every
+//   player the proof involves, and frames them close; closing it returns to the step.
 
 import { contribution, highlightedPlayers, evidenceRows, shortLabel, stepPlayers } from "./account";
-import { type Bundle, positionAt, type StoryStep } from "./bundle";
+import { type Bundle, positionAt, type Proof, type StoryStep } from "./bundle";
 import { type Sample, sampleTrack } from "./motion";
 import { type Mode, type Overlay, overlayPoints, overlaysFor, stepOverlays, type Vec2 } from "./overlays";
 import { Story } from "./story";
@@ -18,12 +20,14 @@ export interface SceneLike {
   update(samples: Map<string, Sample | null>): void;
   setHighlight(ids: string[]): void; // ringed and lit; everyone else dimmed (none: all lit)
   setLabel(id: string | null, text?: string): void; // the one floating name tag
+  setLabels(entries: { id: string; text: string }[]): void; // a proof's players, all named
   setOverlays(overlays: Overlay[]): void;
-  focus(points: Vec2[]): void; // eases, never snaps
+  focus(points: Vec2[], fit?: number): void; // eases, never snaps
   step(dtSeconds: number): void;
 }
 
-export const LEAD_IN_S = 1.2; // a step replays this much of the play before its frame
+export const LEAD_IN_S = 1.2;
+const REVEAL_FIT = 2.0; // an opened proof frames its players close (a step frames the play wide) // a step replays this much of the play before its frame
 const CONTINUE_WITHIN_S = 3.0; // closer than this ahead: keep playing from where we are instead of rewinding
 
 export type View = "story" | "explore";
@@ -34,6 +38,7 @@ export class Viewer {
   active: string | null = null; // the selected contribution (Explore), or the current step's contribution (Story)
   mode: Mode = "analyst";
   view: View = "story";
+  proof: Proof | null = null; // the evidence open on the pitch, if any
   private readonly jumps: Map<string, number>;
   private pending: Overlay[] | null = null; // drawn when the lead-in reaches the frame
 
@@ -71,9 +76,37 @@ export class Viewer {
     this.scene.focus([...points, ...overlayPoints(overlays)]);
   }
 
+  /** Open a claim's proof on the pitch: pause, seek to its frame, ring and name everyone it involves, frame them
+   *  close. The beat's (or fact's) own drawing stays. */
+  reveal(proof: Proof, overlays: Overlay[] = []): void {
+    this.story.pause();
+    this.clock.pause();
+    this.clock.seekFrame(proof.focus_frame);
+    this.pending = null;
+    this.proof = proof;
+    const ids = proof.players.map((p) => p.player_id).filter((id) => this.bundle.tracks[id]);
+    this.scene.setOverlays(overlays);
+    this.scene.setHighlight(ids);
+    this.scene.setLabels(ids.map((id) => ({ id, text: shortLabel(this.bundle, id) })));
+    const points = ids.map((p) => positionAt(this.bundle, p, proof.focus_frame)).filter((p): p is Vec2 => p !== null);
+    this.scene.focus([...points, ...overlayPoints(overlays)], REVEAL_FIT);
+    this.scene.update(this.samples());
+  }
+
+  /** Close the proof: back to the step (Story) or the selected fact (Explore). */
+  conceal(): void {
+    if (!this.proof) return;
+    this.proof = null;
+    const step = this.story.current;
+    if (this.view === "story" && step) this.showStep(step);
+    else if (this.active) this.jump(this.active);
+    else this.clear();
+  }
+
   /** Story: show one step (called by Story on every step change). */
   showStep(step: StoryStep): void {
     this.view = "story";
+    this.proof = null;
     this.active = step.contribution_id;
     const target = this.clock.frameIds.indexOf(step.frame_id);
     const lead = Math.round(LEAD_IN_S * this.clock.fps);
@@ -90,6 +123,7 @@ export class Viewer {
 
   /** Explore: jump to a contribution: pause, seek to its frame, focus its players, draw it, frame them. */
   jump(id: string): void {
+    this.proof = null;
     const frameId = this.jumps.get(id);
     if (frameId === undefined) throw new Error(`no jump frame for ${id}`);
     const c = contribution(this.bundle, id);

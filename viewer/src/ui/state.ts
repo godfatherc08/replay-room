@@ -7,9 +7,14 @@ export type { Mode, View };
 
 type Listener = () => void;
 
+/** Which claim's evidence is open: a story beat, or a fact of the account. */
+export type EvidenceKey = { beat: string } | { contribution: string };
+
 export class UIState {
   mode: Mode;
   view: View;
+  evidence: EvidenceKey | null = null;
+  expanded = false; // the step card's full reasoning
   private listeners: Listener[] = [];
 
   constructor(mode: Mode = "analyst", view: View = "story") {
@@ -28,6 +33,16 @@ export class UIState {
 
   setView(view: View): void {
     this.view = view;
+    this.emit();
+  }
+
+  setEvidence(key: EvidenceKey | null): void {
+    this.evidence = key;
+    this.emit();
+  }
+
+  setExpanded(on: boolean): void {
+    this.expanded = on;
     this.emit();
   }
 

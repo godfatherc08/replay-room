@@ -4,10 +4,11 @@
 // In Story the stage's step card is the hero, so the chain starts collapsed here; in Explore it is open and
 // is the way in. Every word and number is a field of the bundle; a slot it has nothing for is left out.
 
-import { decisionView, evidenceRows, momentHeader, outcomeView, summary } from "../account";
+import { decisionView, evidenceRows, momentHeader, outcomeView, proofOf, proofView, stepCaption,
+         summary } from "../account";
 import type { Viewer } from "../controller";
 import { button, el, icon, meter, radial } from "./dom";
-import type { UIState } from "./state";
+import type { EvidenceKey, UIState } from "./state";
 
 export interface PanelHandle {
   render(): void; // rebuild for the current mode / view
@@ -15,7 +16,8 @@ export interface PanelHandle {
 }
 
 export function buildPanel(root: HTMLElement, viewer: Viewer, state: UIState, onJump: (id: string) => void,
-                           onStep: (index: number) => void): PanelHandle {
+                           onStep: (index: number) => void,
+                           onEvidence: (key: EvidenceKey | null) => void = (key) => state.setEvidence(key)): PanelHandle {
   const { bundle } = viewer;
   let open: boolean | null = null; // the chain list: null = follow the view
   let rows = new Map<string, HTMLElement>();
@@ -34,6 +36,48 @@ export function buildPanel(root: HTMLElement, viewer: Viewer, state: UIState, on
     value.append(radial(o.fraction, 44), words);
     box.append(top, value);
     if (h.description) box.append(el("p", "rr-lede", h.description));
+    return box;
+  };
+
+  /** The open proof: what is claimed, what was measured, who, which frame, which records. All from the bundle. */
+  const evidence = (): HTMLElement | null => {
+    const key = state.evidence;
+    if (!key) return null;
+    const p = proofOf(bundle, key);
+    const v = proofView(p, state.mode);
+    const claim = "beat" in key
+      ? stepCaption(bundle.story.find((s) => s.beat_id === key.beat)!, state.mode)
+      : ((r) => `${r.player}: ${r.gloss}`)(evidenceRows(bundle).find((r) => r.id === key.contribution)!);
+    const box = el("section", "rr-block rr-evidence");
+    box.setAttribute("aria-label", "evidence");
+    const head = el("div", "rr-card-head");
+    const close = button("rr-icon-btn", "Close the evidence", "×");
+    close.addEventListener("click", () => onEvidence(null));
+    head.append(el("h2", "rr-section-title", "Evidence"), close);
+    box.append(head, el("p", "rr-evidence-claim", claim));
+    const section = (title: string, items: HTMLElement[]) => {
+      if (!items.length) return;
+      const s = el("div", "rr-evidence-section");
+      s.append(el("h3", "rr-label", title), ...items);
+      box.append(s);
+    };
+    section("Measured", v.measured.map((m) => {
+      const row = el("div", "rr-measured");
+      row.append(el("p", "rr-measured-text", m.text));
+      if (m.magnitude !== null) row.append(meter(m.magnitude, "pos"));
+      return row;
+    }));
+    section("Players", v.players.map((x) => {
+      const chip = el("span", "rr-player-chip");
+      const sw = el("span", "rr-swatch");
+      sw.style.background = bundle.teams.find((t) => t.team_id === x.teamId)?.kit.shirt ?? "#64748b";
+      chip.append(sw, el("span", undefined, x.label), el("span", "rr-micro", x.role));
+      return chip;
+    }));
+    const go = button("rr-link", "Go to the frame", `<span>Go to frame ${p.focus_frame}</span>${icon("chevron", 14)}`);
+    go.addEventListener("click", () => onEvidence(key));
+    section("Frames", [...v.frames.map((f) => el("p", "rr-record", f)), go]);
+    section("Records (feed event ids)", v.events.map((e) => el("p", "rr-record", e)));
     return box;
   };
 
@@ -66,7 +110,10 @@ export function buildPanel(root: HTMLElement, viewer: Viewer, state: UIState, on
       value.append(meter(r.magnitude, r.positive ? "pos" : "neg"));
       if (state.mode === "analyst") value.append(el("span", "rr-metric", r.metric));
       b.append(ic, main, value, el("span", "rr-micro rr-row-time", r.clock));
-      b.addEventListener("click", () => onJump(r.id));
+      b.addEventListener("click", () => {
+        onJump(r.id);
+        onEvidence({ contribution: r.id });
+      });
       rows.set(r.id, b);
       const li = el("li");
       li.append(b);
@@ -110,7 +157,8 @@ export function buildPanel(root: HTMLElement, viewer: Viewer, state: UIState, on
 
   function render(): void {
     root.dataset.mode = state.mode;
-    root.replaceChildren(...[moment(), chain(), decision(), story()].filter((x): x is HTMLElement => x !== null));
+    root.replaceChildren(...[evidence(), moment(), chain(), decision(), story()]
+      .filter((x): x is HTMLElement => x !== null));
     mark();
   }
 

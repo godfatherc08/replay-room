@@ -23,7 +23,7 @@ import { Scene } from "@babylonjs/core/scene";
 import type { Bundle } from "./bundle";
 import type { Sample } from "./motion";
 import { COLORS, kitOf, type Overlay, type Vec2 } from "./overlays";
-import { PLAYER_HEIGHT, PlayerBodies } from "./players";
+import { PLAYER_HEIGHT, PlayerBodies, TURN_RATE } from "./players";
 import { buildStadium } from "./stadium";
 
 export interface SceneOptions {
@@ -42,6 +42,9 @@ const VIEW_3D = { alpha: -Math.PI / 2, beta: 0.95, radius: 92 };
 const VIEW_2D_BETA = 0.0001;
 const TAG_REFERENCE_RADIUS = 36; // camera distance at which tags are drawn at their own size; farther, they grow
 const FOCUS_LIFT = 0.12; // share of the camera distance the focus moves towards the camera
+export const FIT_WIDE = 3.0; // camera distance per metre of spread for a step: wide enough to read the play
+export const FIT_CLOSE = 2.0; // ... for an opened proof: tight on its players
+const MIN_WIDE = 40; // m: never closer than this for a step
 
 export class PitchScene {
   readonly scene: Scene;
@@ -50,7 +53,7 @@ export class PitchScene {
   bodies: PlayerBodies;
   ball: Mesh;
   highlighted: string[] = [];
-  label: { id: string; mesh: Mesh } | null = null;
+  labels = new Map<string, Mesh>(); // the floating name tags: the step's lead player, or every player of a proof
   overlayMeshes: Mesh[] = [];
   stadium: Mesh[] = [];
   is2D = false;
@@ -277,22 +280,33 @@ export class PitchScene {
   private refreshPlates(): void {
     const all = this.highlighted.length === 0;
     for (const [id, m] of this.markers) {
-      if (m.plate) m.plate.isVisible = (all || this.highlighted.includes(id)) && this.label?.id !== id;
+      if (m.plate) m.plate.isVisible = !all && this.highlighted.includes(id) && !this.labels.has(id);
     }
   }
 
   /** The one floating name tag, over one player (null removes it). */
   setLabel(id: string | null, text?: string): void {
-    if (this.label && (this.label.id !== id || !text)) {
-      this.label.mesh.dispose(false, true);
-      this.label = null;
+    this.setLabels(id && text ? [{ id, text }] : []);
+  }
+
+  /** Name tags over these players (a proof's players); every other tag is removed. */
+  setLabels(entries: { id: string; text: string }[]): void {
+    const wanted = new Map(entries.filter((e) => this.markers.has(e.id)).map((e) => [e.id, e.text]));
+    for (const [id, mesh] of this.labels) {
+      if (wanted.get(id) !== mesh.metadata?.text) {
+        mesh.dispose(false, true);
+        this.labels.delete(id);
+      }
     }
-    const m = id ? this.markers.get(id) : undefined;
-    if (id && text && m && !this.label && this.opts.labels) {
-      const mesh = this.textPlane(`tag-${id}`, text, this.shirt(id), 0.95, 0.92);
-      mesh.position.y = PLAYER_HEIGHT + 0.7;
-      mesh.parent = m.root;
-      this.label = { id, mesh };
+    if (this.opts.labels) {
+      for (const [id, text] of wanted) {
+        if (this.labels.has(id)) continue;
+        const mesh = this.textPlane(`tag-${id}`, text, this.shirt(id), 0.95, 0.92);
+        mesh.metadata = { text };
+        mesh.position.y = PLAYER_HEIGHT + 0.7;
+        mesh.parent = this.markers.get(id)!.root;
+        this.labels.set(id, mesh);
+      }
     }
     this.refreshPlates();
   }
@@ -400,13 +414,14 @@ export class PitchScene {
     return out;
   }
 
-  /** Ease the camera onto these pitch points (centroid; zoom to fit their spread). */
-  focus(points: Vec2[], fit = 2.1): void {
+  /** Ease the camera onto these pitch points (centroid; zoom to fit their spread). The default is a wide,
+   *  readable framing of the play; a proof tightens it on its players. */
+  focus(points: Vec2[], fit = FIT_WIDE): void {
     if (points.length === 0) return;
     const cx = points.reduce((s, p) => s + p[0], 0) / points.length;
     const cy = points.reduce((s, p) => s + p[1], 0) / points.length;
     const spread = Math.max(...points.map((p) => Math.hypot(p[0] - cx, p[1] - cy)), 6);
-    this.desiredRadius = Math.min(Math.max(spread * fit, 24), 110);
+    this.desiredRadius = Math.min(Math.max(spread * fit, fit >= FIT_WIDE ? MIN_WIDE : 22), 120);
     // nudge the target towards the camera so what is framed sits above the step card at the bottom
     const k = this.desiredRadius * FOCUS_LIFT;
     this.desiredTarget = this.world([cx + k * Math.cos(this.camera.alpha), cy + k * Math.sin(this.camera.alpha)]);
@@ -446,16 +461,17 @@ export class PitchScene {
 
   /** Per-frame camera easing towards the last focus; tags keep a readable size at any distance. */
   step(dtSeconds: number): void {
+    this.bodies.turn = 1 - Math.exp(-dtSeconds * TURN_RATE); // for the next update: turning is per second
     const s = Math.min(Math.max(this.camera.radius / TAG_REFERENCE_RADIUS, 1), 2.4);
     for (const m of this.markers.values()) {
       if (!m.plate) continue;
       m.plate.scaling.setAll(s);
       m.plate.position.y = PLAYER_HEIGHT + 0.15 + 0.45 * s; // the plate's bottom edge stays above the head
     }
-    if (this.label) {
-      const t = Math.min(s, 1.6);
-      this.label.mesh.scaling.setAll(t);
-      this.label.mesh.position.y = PLAYER_HEIGHT + 0.2 + 0.5 * t;
+    for (const label of this.labels.values()) {
+      const t = Math.min(s, 2.0);
+      label.scaling.setAll(t);
+      label.position.y = PLAYER_HEIGHT + 0.2 + 0.5 * t;
     }
     const k = 1 - Math.exp(-dtSeconds * 4);
     if (this.desiredTarget) {

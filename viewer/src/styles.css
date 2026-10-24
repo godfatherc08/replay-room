@@ -131,9 +131,9 @@ h1, h2, p, ol { margin: 0; }
 .rr-ghost { border: 0; background: none; color: var(--muted); font-size: var(--fs-label); }
 .rr-ghost:hover { color: var(--text); }
 
-/* step card: one caption, one meter */
-.rr-step-card { left: 50%; bottom: var(--s4); transform: translateX(-50%); width: min(560px, calc(100% - 32px));
-                display: grid; gap: var(--s2); padding: var(--s3) var(--s4); border-radius: 12px;
+/* step card: compact and docked bottom-left (the claim + its evidence status); "Why" expands the reasoning */
+.rr-step-card { left: var(--s4); bottom: var(--s4); width: min(420px, calc(100% - 32px)); max-height: 46%;
+                overflow-y: auto; display: grid; gap: var(--s2); padding: var(--s2) var(--s3); border-radius: 10px;
                 background: rgba(11, 18, 28, 0.9); border: 1px solid var(--line-2); backdrop-filter: blur(10px);
                 box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45); }
 .rr-step-card > * { animation: rr-rise 350ms ease-out both; }
@@ -148,7 +148,39 @@ h1, h2, p, ol { margin: 0; }
 .rr-headline-chip { font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
                     color: var(--accent-ink); background: var(--accent); padding: 1px var(--s2); border-radius: 4px; }
 .rr-headline-chip.rr-chip-support { color: var(--neg); background: transparent; box-shadow: inset 0 0 0 1px var(--neg); }
-.rr-caption { font-size: var(--fs-title); font-weight: 400; line-height: 1.4; color: var(--text); }
+.rr-caption { font-size: var(--fs-body); font-weight: 400; line-height: 1.5; color: var(--text-2); }
+.rr-claim { all: unset; cursor: pointer; font-size: var(--fs-body); font-weight: 500; line-height: 1.45; color: var(--text);
+            display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.rr-step-card.rr-expanded .rr-claim { -webkit-line-clamp: unset; }
+.rr-claim:hover { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+.rr-claim:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rr-card-row { display: flex; align-items: center; gap: var(--s2); }
+.rr-evidence-chip { display: inline-flex; align-items: center; gap: var(--s1); padding: 2px var(--s2); border-radius: 999px;
+                    border: 1px solid rgba(52, 211, 153, 0.45); background: rgba(52, 211, 153, 0.08); color: var(--pos);
+                    font-size: var(--fs-label); font-weight: 500; cursor: pointer; }
+.rr-evidence-chip.rr-on, .rr-evidence-chip:hover { background: rgba(52, 211, 153, 0.18); }
+.rr-check { font-weight: 600; }
+.rr-expand { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s1); border: 0; background: none;
+             color: var(--muted); font-size: var(--fs-label); cursor: pointer; }
+.rr-expand:hover { color: var(--text); }
+.rr-expand[aria-expanded="true"] svg { transform: rotate(90deg); }
+.rr-detail { display: grid; gap: var(--s2); padding-top: var(--s2); border-top: 1px solid var(--line); }
+.rr-why { display: grid; gap: var(--s1); }
+.rr-why-line { font-size: var(--fs-body); line-height: 1.5; color: var(--text); }
+.rr-label { font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+/* the evidence panel: claim, measured, players, frames, records */
+.rr-evidence { border-color: rgba(52, 211, 153, 0.5); display: grid; gap: var(--s2); }
+.rr-evidence .rr-card-head { display: flex; align-items: center; justify-content: space-between; }
+.rr-evidence-claim { font-size: var(--fs-body); line-height: 1.5; color: var(--text); }
+.rr-evidence-section { display: grid; gap: var(--s1); }
+.rr-measured { display: grid; gap: var(--s1); }
+.rr-measured-text { font-size: var(--fs-body); line-height: 1.5; color: var(--pos); }
+.rr-player-chip { display: inline-flex; align-items: center; gap: var(--s2); font-size: var(--fs-label); color: var(--text); }
+.rr-player-chip .rr-micro { color: var(--muted); }
+.rr-record { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: var(--fs-label); color: var(--text-2); }
+.rr-icon-btn { border: 0; background: none; color: var(--muted); font-size: var(--fs-title); line-height: 1; cursor: pointer;
+               padding: 0 var(--s1); }
+.rr-icon-btn:hover { color: var(--text); }
 .rr-step-meters { display: grid; gap: var(--s1); }
 .rr-meter-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px auto; align-items: center; gap: var(--s2); }
 .rr-gloss { font-size: var(--fs-label); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -20,7 +20,8 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 export const PLAYER_HEIGHT = 2.9; // m: about 1.6x life size, so players read from a broadcast camera
 const MIN_FACING_SPEED = 0.6; // m/s: slower than this, keep the last heading
 const BODY = "#eef1f5"; // near-white matte skin of the figure
-const DIM = 0.62; // how far players who are not the focus fade towards the pitch-shadow grey
+const DIM = 0.38; // how far players who are not the focus fade towards grey: the kit's hue stays readable
+export const TURN_RATE = 14; // 1/s: heading eases towards the direction of travel (time constant ~70 ms)
 const GAP_DIM = 0.45; // brightness of a player interpolated across a tracking gap
 const FADE = [0.3, 0.36, 0.4]; // the grey they fade to: muted, never a muddy darkened kit
 
@@ -44,6 +45,8 @@ export class PlayerBodies {
   private readonly base: Record<Slot, Float32Array>; // undimmed colours
   private readonly colors: Map<BodyPart, Float32Array>;
   private readonly heading: number[];
+  private readonly placed: boolean[];
+  turn = 1; // share of the remaining turn taken this update (set from the frame time by the scene) // drawn last update (a figure appearing faces its travel at once)
   private readonly dim: number[]; // 0 = full colour, DIM = faded
 
   constructor(ids: string[], kits: PlayerKit[], parts: BodyPart[], kind: "figure" | "capsule") {
@@ -54,6 +57,7 @@ export class PlayerBodies {
     this.matrices = new Float32Array(16 * n);
     this.base = { shirt: new Float32Array(4 * n), shorts: new Float32Array(4 * n), body: new Float32Array(4 * n) };
     this.heading = ids.map(() => 0);
+    this.placed = ids.map(() => false);
     this.dim = ids.map(() => 0);
     kits.forEach((k, i) => this.setKit(i, k));
     for (let i = 0; i < n; i++) Matrix.Scaling(0, 0, 0).copyToArray(this.matrices, 16 * i);
@@ -91,7 +95,12 @@ export class PlayerBodies {
 
   /** Place player i at world (x, z), facing its velocity; hidden when ``visible`` is false. */
   setPose(i: number, x: number, z: number, vx: number, vz: number, visible: boolean, gap = false): void {
-    if (Math.hypot(vx, vz) >= MIN_FACING_SPEED) this.heading[i] = Math.atan2(vx, vz);
+    if (Math.hypot(vx, vz) >= MIN_FACING_SPEED) { // face the direction of travel; standing still: hold it
+      const target = Math.atan2(vx, vz);
+      const turn = Math.atan2(Math.sin(target - this.heading[i]), Math.cos(target - this.heading[i]));
+      this.heading[i] += visible && this.placed[i] ? turn * this.turn : turn;
+    }
+    this.placed[i] = visible;
     const s = visible ? 1 : 0;
     Matrix.Compose(new Vector3(s, s, s), Quaternion.RotationYawPitchRoll(this.heading[i], 0, 0), new Vector3(x, 0, z))
       .copyToArray(this.matrices, 16 * i);

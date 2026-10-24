@@ -36,6 +36,7 @@ async function open(query, settle = 2500) {
 }
 const shot = (name, opts = {}) => page.screenshot({ path: join(out, `${name}.png`), ...opts });
 
+const probe = {};
 const at = await (async () => {
   await open("", 500);
   return page.evaluate(() => {
@@ -88,6 +89,98 @@ if (at.context) {
 await open(`step=${at.lead}&stadium=0`, 3000);
 await shot("k-no-stadium");
 
+// v3: the card at rest (compact), expanded (the full reasoning), and the evidence drill-down open on the flaw
+if (at.flaw) {
+  await open(`step=${at.flaw}`, 3500);
+  await shot("v3-a-compact-card");
+  await page.locator(".rr-expand").click();
+  await page.waitForTimeout(600);
+  await shot("v3-b-expanded-card");
+  await page.locator(".rr-claim").click();
+  await page.waitForTimeout(2500);
+  await shot("v3-c-evidence-open");
+  await page.locator(".rr-evidence").screenshot({ path: join(out, "v3-c-evidence-panel.png") });
+  await page.locator(".rr-mode-fan, .rr-modes .rr-seg-btn[data-value=fan]").first().click();
+  await page.waitForTimeout(800);
+  await shot("v3-c2-evidence-open-fan");
+}
+// v3 (d): the wide default framing of a step, and (e) two consecutive playback frames, 100 ms apart
+await open(`step=${at.assist}`, 3500);
+await shot("v3-d-wide-step");
+await open("play=1", 6000);
+probe.motion = [];
+for (const k of [0, 1]) {
+  await shot(`v3-e-playback-${k}`);
+  probe.motion.push(await page.evaluate(() => {
+    const { viewer, scene } = window.replayRoom;
+    const id = "EPA-11";
+    const m = scene.markers.get(id).root.position;
+    return { clockPos: +viewer.clock.pos.toFixed(3), x: +m.x.toFixed(3), z: +m.z.toFixed(3) };
+  }));
+  await page.waitForTimeout(100);
+}
+
+// v3: the card at rest (compact), expanded (the full reasoning), and the evidence drill-down open on the flaw
+if (at.flaw) {
+  await open(`step=${at.flaw}`, 3500);
+  await shot("v3-a-compact-card");
+  await page.locator(".rr-expand").click();
+  await page.waitForTimeout(600);
+  await shot("v3-b-expanded-card");
+  await page.locator(".rr-claim").click();
+  await page.waitForTimeout(2500);
+  await shot("v3-c-evidence-open");
+  await page.locator(".rr-evidence").screenshot({ path: join(out, "v3-c-evidence-panel.png") });
+  await page.locator(".rr-mode-fan, .rr-modes .rr-seg-btn[data-value=fan]").first().click();
+  await page.waitForTimeout(800);
+  await shot("v3-c2-evidence-open-fan");
+}
+// v3 (d): the wide default framing of a step, and (e) two consecutive playback frames, 100 ms apart
+await open(`step=${at.assist}`, 3500);
+await shot("v3-d-wide-step");
+await open("play=1", 6000);
+probe.motion = [];
+for (const k of [0, 1]) {
+  await shot(`v3-e-playback-${k}`);
+  probe.motion.push(await page.evaluate(() => {
+    const { viewer, scene } = window.replayRoom;
+    const id = "EPA-11";
+    const m = scene.markers.get(id).root.position;
+    return { clockPos: +viewer.clock.pos.toFixed(3), x: +m.x.toFixed(3), z: +m.z.toFixed(3) };
+  }));
+  await page.waitForTimeout(100);
+}
+
+// motion: 30 consecutive rendered frames of one running player: no jump bigger than the speed allows, and the
+// figure facing within a few degrees of its velocity
+await open("play=1", 5000);
+probe.frames = await page.evaluate(async () => {
+  const { viewer, scene } = window.replayRoom;
+  const id = "EPA-11";
+  const i = scene.markers.get(id).index;
+  const out = [];
+  for (let k = 0; k < 30; k++) {
+    await new Promise((r) => requestAnimationFrame(r));
+    const p = scene.markers.get(id).root.position;
+    const s = viewer.samples().get(id);
+    const v = s ? Math.atan2(s.vx, s.vy) : null;
+    out.push({ pos: +viewer.clock.pos.toFixed(3), x: p.x, z: p.z, speed: s ? Math.hypot(s.vx, s.vy) : 0,
+               heading: scene.bodies.heading[i], velocity: v });
+  }
+  const steps = out.slice(1).map((f, k) => Math.hypot(f.x - out[k].x, f.z - out[k].z));
+  // implied speed: distance over the clock time between frames (a teleport would imply an impossible speed)
+  const implied = out.slice(1).map((f, k) => (f.pos > out[k].pos
+    ? steps[k] / ((f.pos - out[k].pos) / viewer.clock.fps) : 0));
+  const turn = out.filter((f) => f.speed > 1).map((f) => {
+    const d = Math.atan2(Math.sin(f.heading - f.velocity), Math.cos(f.heading - f.velocity));
+    return Math.abs(d) * 180 / Math.PI;
+  });
+  return { frames: out.length, fractional: out.filter((f) => f.pos % 1 > 0.01).length,
+           maxStepM: +Math.max(...steps).toFixed(3), maxImpliedSpeed: +Math.max(...implied).toFixed(2),
+           maxObservedSpeed: +Math.max(...out.map((f) => f.speed)).toFixed(2),
+           maxFacingErrorDeg: turn.length ? +Math.max(...turn).toFixed(1) : null };
+});
+
 // (h) a close-up of the figures: the camera pulled in on the focused player of the assist step
 await open(`step=${at.assist}`, 3000);
 await page.evaluate(() => {
@@ -104,7 +197,6 @@ await shot("h-closeup");
 
 // probes: what a still cannot show
 await open("", 1500);
-const probe = {};
 probe.fonts = await page.evaluate(() => {
   const sizes = new Map();
   for (const e of document.querySelectorAll("body *")) {

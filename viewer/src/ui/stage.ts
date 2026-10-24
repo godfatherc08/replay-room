@@ -1,11 +1,15 @@
-// Overlays on the canvas: the title card (Story's ready state), the step card (one caption, its gloss and
-// meter), the 2D/3D toggle, the camera tools, and a compact, collapsible legend.
+// Overlays on the canvas: the title card (Story's ready state), the step card, the 2D/3D toggle, the camera
+// tools, and a compact, collapsible legend.
+//
+// The step card is compact and docked: the claim in one line and its evidence status ("✓ Evidence · 2 events ·
+// frame 2419"). Clicking the claim or the chip opens its proof; "Why" expands the full reasoning (the whole
+// telling, and what was measured, in the register).
 
-import { momentHeader, outcomeView, stepView } from "../account";
+import { evidenceChip, firstSentence, momentHeader, outcomeView, proofOf, proofView, stepView } from "../account";
 import type { Viewer } from "../controller";
 import { COLORS } from "../overlays";
 import { button, el, icon, meter, radial } from "./dom";
-import type { UIState } from "./state";
+import type { EvidenceKey, UIState } from "./state";
 
 /** Camera tools the stage drives (PitchScene in the app, a fake in tests). */
 export interface StageControls {
@@ -20,7 +24,8 @@ export interface StageHandle {
   render(): void; // title card / step card for the current story state and mode
 }
 
-export function buildStage(root: HTMLElement, viewer: Viewer, state: UIState, controls: StageControls | undefined): StageHandle {
+export function buildStage(root: HTMLElement, viewer: Viewer, state: UIState, controls: StageControls | undefined,
+                           onEvidence: (key: EvidenceKey | null) => void = (key) => state.setEvidence(key)): StageHandle {
   const { bundle, story } = viewer;
   root.replaceChildren();
 
@@ -105,6 +110,7 @@ export function buildStage(root: HTMLElement, viewer: Viewer, state: UIState, co
     const step = story.current;
     if (!step) return card.replaceChildren();
     const v = stepView(bundle, step, state.mode);
+    const proof = proofOf(bundle, { beat: step.beat_id });
     const top = el("div", "rr-step-top");
     const counter = el("span", "rr-micro rr-counter", `Step ${v.index + 1} of ${v.total}`);
     const who = el("span", "rr-step-who");
@@ -116,16 +122,46 @@ export function buildStage(root: HTMLElement, viewer: Viewer, state: UIState, co
     who.append(el("span", undefined, v.title));
     top.append(who, counter);
     if (v.chip) top.insertBefore(el("span", `rr-headline-chip${v.headline ? "" : " rr-chip-support"}`, v.chip), counter);
-    const caption = el("p", "rr-caption", v.caption);
-    const meters = el("div", "rr-step-meters");
-    for (const m of v.meters) {
-      const row = el("div", "rr-meter-row");
-      row.append(el("span", "rr-gloss", m.label), meter(m.fraction, m.tone));
-      if (m.metric) row.append(el("span", "rr-metric", m.metric));
-      meters.append(row);
+
+    // compact: the claim in one line, and its evidence status; clicking the claim opens the proof
+    const open = state.evidence !== null && "beat" in state.evidence && state.evidence.beat === step.beat_id;
+    const claim = button("rr-claim", "Show the evidence for this claim", "");
+    claim.textContent = firstSentence(v.caption);
+    claim.addEventListener("click", () => onEvidence({ beat: step.beat_id }));
+    const actions = el("div", "rr-card-row");
+    const chip = button(`rr-evidence-chip${open ? " rr-on" : ""}`, "Show the evidence",
+                        `<span class="rr-check">✓</span><span>Evidence · ${evidenceChip(proof)}</span>`);
+    chip.addEventListener("click", () => onEvidence(open ? null : { beat: step.beat_id }));
+    const more = button("rr-expand", state.expanded ? "Show less" : "Show the full reasoning",
+                        `<span>${state.expanded ? "Less" : "Why"}</span>${icon("chevron", 12)}`);
+    more.setAttribute("aria-expanded", String(state.expanded));
+    more.addEventListener("click", () => state.setExpanded(!state.expanded));
+    actions.append(chip, more);
+    const parts: HTMLElement[] = [top, claim, actions];
+
+    if (state.expanded) { // the full reasoning: the rest of the telling, then why it mattered, measured
+      const detail = el("div", "rr-detail");
+      const rest = v.caption.slice(firstSentence(v.caption).length).trim();
+      if (rest) detail.append(el("p", "rr-caption", rest));
+      const why = el("div", "rr-why");
+      why.append(el("h3", "rr-label", "Why it mattered"));
+      for (const m of proofView(proof, state.mode).measured) {
+        const row = el("p", "rr-why-line", m.text);
+        why.append(row);
+      }
+      const meters = el("div", "rr-step-meters");
+      for (const m of v.meters) {
+        const row = el("div", "rr-meter-row");
+        row.append(el("span", "rr-gloss", m.label), meter(m.fraction, m.tone));
+        if (m.metric) row.append(el("span", "rr-metric", m.metric));
+        meters.append(row);
+      }
+      detail.append(why, meters);
+      parts.push(detail);
     }
     card.dataset.kind = v.kind;
-    card.replaceChildren(top, caption, meters);
+    card.classList.toggle("rr-expanded", state.expanded);
+    card.replaceChildren(...parts);
   };
 
   const render = () => {

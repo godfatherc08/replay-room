@@ -4,7 +4,7 @@
 // from the exporter). The raw metric is secondary text, and only in Analyst mode. Fan mode never shows one.
 
 import { type Bundle, type ContextFact, type Contribution, type Counterfactual, FACT_KINDS, type Link, type Meaning,
-         type StoryStep } from "./bundle";
+         type Proof, type StoryStep } from "./bundle";
 import type { Mode } from "./overlays";
 
 export function signed(v: number): string {
@@ -245,6 +245,51 @@ export function stepView(bundle: Bundle, step: StoryStep, mode: Mode): StepView 
            gloss: "a better option was on", headline: false, chip: null,
            meters: [{ label: v.chosen.label, fraction: v.chosen.fraction, tone: "chosen", metric: v.chosen.metric },
                     { label: v.better.label, fraction: v.better.fraction, tone: "better", metric: v.better.metric }] };
+}
+
+// ------------------------------------------------------------------------------------------ the proof
+
+/** The proof behind a story beat or a fact of the account. */
+export function proofOf(bundle: Bundle, key: { beat: string } | { contribution: string }): Proof {
+  const p = "beat" in key ? bundle.proofs.beats[key.beat] : bundle.proofs.contributions[key.contribution];
+  if (!p) throw new Error(`no proof for ${JSON.stringify(key)}`);
+  return p;
+}
+
+/** The at-a-glance evidence status: "2 events · frame 2419" (every count from the proof itself). */
+export function evidenceChip(p: Proof): string {
+  const parts: string[] = [];
+  if (p.events.length) parts.push(`${p.events.length} event${p.events.length > 1 ? "s" : ""}`);
+  if (p.frames.length) parts.push(`frame ${p.frames[p.frames.length - 1].frame_id}`);
+  else parts.push(`frame ${p.focus_frame}`);
+  return parts.join(" · ");
+}
+
+export interface ProofView {
+  players: { id: string; label: string; role: string; teamId: string | null }[];
+  frames: string[]; // "frame 2419 · 04:01 · where the run ended"
+  events: string[]; // "ev00220 · pass · Robin Hale · 04:00"
+  measured: { text: string; magnitude: number | null; metric: string | null }[];
+}
+
+/** The proof in the register: Analyst states the measured number and its meaning; Fan the same meaning in words.
+ *  Ids and match clocks are records, not metrics: both registers list them. */
+export function proofView(p: Proof, mode: Mode): ProofView {
+  const analyst = mode === "analyst";
+  return {
+    players: p.players.map((x) => ({ id: x.player_id, role: x.role, teamId: x.team_id,
+                                     label: x.shirt_number !== null ? `#${x.shirt_number} ${x.name}` : x.name })),
+    frames: p.frames.map((f) => `frame ${f.frame_id} · ${f.match_clock} · ${f.what}`),
+    events: p.events.map((e) => `${e.original_event_id} · ${e.type.replace(/_/g, " ")} · ${e.player} · ${e.match_clock}`),
+    measured: p.measured.map((m) => ({ text: analyst ? m.statement : m.plain, magnitude: m.magnitude,
+                                       metric: analyst ? m.metric : null })),
+  };
+}
+
+/** The first sentence of a telling: the card's one-line claim. */
+export function firstSentence(text: string): string {
+  const m = text.match(/^.*?[.!?](?=\s+[A-Z"]|$)/);
+  return (m ? m[0] : text).trim();
 }
 
 // ------------------------------------------------------------------------------- outcome and decision

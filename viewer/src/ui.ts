@@ -20,6 +20,9 @@ import { buildRibbon } from "./ui/ribbon";
 import { buildStage, type StageControls } from "./ui/stage";
 import { UIState } from "./ui/state";
 import { buildTopbar } from "./ui/topbar";
+import { proofOf } from "./account";
+import { overlaysFor, stepOverlays } from "./overlays";
+import type { EvidenceKey } from "./ui/state";
 
 export type { Mode, StageControls, View };
 
@@ -68,10 +71,25 @@ export function buildUI(roots: UIRoots, viewer: Viewer, opts: UIOptions = {}): U
     story.goto(index);
   };
 
+  /** Open (or close) a claim's proof: on the pitch (players ringed and named, the frame, the drawing) and in the
+   *  panel (what was measured, who, which frame, which records). */
+  const evidence = (key: EvidenceKey | null) => {
+    if (!key) {
+      viewer.conceal();
+      state.setEvidence(null);
+      return;
+    }
+    const step = "beat" in key ? viewer.bundle.story.find((s) => s.beat_id === key.beat) : undefined;
+    const overlays = step ? stepOverlays(viewer.bundle, step, state.mode)
+      : overlaysFor(viewer.bundle, (key as { contribution: string }).contribution, state.mode);
+    viewer.reveal(proofOf(viewer.bundle, key), overlays);
+    state.setEvidence(key);
+  };
+
   const top = buildTopbar(roots.topbar, viewer.bundle, clock, state, opts.onPick);
-  const stage = buildStage(roots.stage, viewer, state, opts.stage);
+  const stage = buildStage(roots.stage, viewer, state, opts.stage, evidence);
   const ribbon = buildRibbon(roots.ribbon, viewer, state, showStep);
-  const panel = buildPanel(roots.side, viewer, state, jump, showStep);
+  const panel = buildPanel(roots.side, viewer, state, jump, showStep, evidence);
   const footer = buildFooter(roots.footer, viewer, state, {
     onPick: opts.onPick,
     jump,
@@ -100,9 +118,11 @@ export function buildUI(roots: UIRoots, viewer: Viewer, opts: UIOptions = {}): U
 
   let shown = "";
   story.onChange(() => {
-    const key = `${story.index}|${story.state === "ready"}`;
+    if (state.evidence && !viewer.proof) state.evidence = null; // the story moved on: the proof closed with it
+    const key = `${story.index}|${story.state === "ready"}|${state.evidence ? 1 : 0}`;
     if (key === shown) return;
     shown = key;
+    panel.render();
     stage.render();
     panel.mark();
   });

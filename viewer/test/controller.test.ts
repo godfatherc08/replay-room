@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { evidenceRows, highlightedPlayers, matchClock, stepPlayers } from "../src/account";
+import { evidenceRows, firstSentence, highlightedPlayers, matchClock, stepPlayers } from "../src/account";
 import { type SceneLike, Viewer } from "../src/controller";
 import type { Sample } from "../src/motion";
 import { type Overlay, stepOverlays, type Vec2 } from "../src/overlays";
@@ -19,8 +19,12 @@ class FakeScene implements SceneLike {
   setHighlight(ids: string[]) {
     this.highlighted = ids;
   }
+  labels: string[] = [];
   setLabel(id: string | null, text?: string) {
     this.label = [id, text];
+  }
+  setLabels(entries: { id: string; text: string }[]) {
+    this.labels = entries.map((e) => e.text);
   }
   setOverlays(o: Overlay[]) {
     this.overlays = o;
@@ -155,15 +159,15 @@ describe("app shell", () => {
     expect(card.querySelector(".rr-cta")!.textContent).toBe("Play analysis");
   });
 
-  it("Play analysis swaps the title card for the step card: caption, gloss and meter, ribbon advancing", () => {
+  it("Play analysis swaps the title card for a compact step card: the claim and its evidence status", () => {
     const { b, v, roots, ui } = shell();
     roots.stage.querySelector<HTMLButtonElement>(".rr-cta")!.click();
     expect(v.story.playing).toBe(true);
     const card = roots.stage.querySelector<HTMLElement>(".rr-step-card")!;
     expect(card.hidden).toBe(false);
-    expect(card.querySelector(".rr-caption")!.textContent).toBe(b.story[0].caption);
-    expect(card.querySelector(".rr-gloss")!.textContent).toBe("Helped the chance");
-    expect(card.querySelectorAll(".rr-meter")).toHaveLength(1);
+    expect(card.querySelector(".rr-claim")!.textContent).toBe(firstSentence(b.story[0].caption));
+    expect(card.querySelector(".rr-evidence-chip")!.textContent).toBe("✓Evidence · 1 event · frame 2354");
+    expect(card.querySelector(".rr-detail")).toBeNull(); // compact at rest
     expect(card.querySelector(".rr-counter")!.textContent).toBe(`Step 1 of ${b.story.length}`);
     run(v, 3.2);
     ui.sync();
@@ -197,6 +201,9 @@ describe("app shell", () => {
     expect(roots.side.querySelectorAll(".rr-metric")).toHaveLength(0);
     ui.state.setView("story");
     roots.ribbon.querySelectorAll<HTMLButtonElement>(".rr-node-btn")[step].click();
+    ui.state.setExpanded(true);
+    roots.stage.querySelector<HTMLButtonElement>(".rr-evidence-chip")!.click(); // the proof, in Fan words
+    expect(roots.side.querySelector(".rr-evidence")).not.toBeNull();
     expect(fanText()).not.toMatch(/\d\.\d/);
     ui.state.setMode("analyst");
     expect(roots.stage.querySelectorAll(".rr-step-card .rr-metric")).toHaveLength(2);
@@ -297,7 +304,44 @@ describe("app shell", () => {
     nodes[ctx].querySelector<HTMLButtonElement>("button")!.click();
     const card = roots.stage.querySelector<HTMLElement>(".rr-step-card")!;
     expect(card.querySelector(".rr-headline-chip")!.textContent).toBe("Match context");
-    expect([...card.querySelectorAll(".rr-gloss")].map((g) => g.textContent)).toEqual(["Here", "Usually"]);
+    card.querySelector<HTMLButtonElement>(".rr-expand")!.click(); // the full reasoning, on demand
+    const open = roots.stage.querySelector<HTMLElement>(".rr-step-card")!;
+    expect([...open.querySelectorAll(".rr-gloss")].map((g) => g.textContent)).toEqual(["Here", "Usually"]);
+    expect(open.querySelector(".rr-why-line")!.textContent).toMatch(/^Northbridge FC's back line was 16\.3 m/);
+  });
+
+  it("clicking a claim opens its proof: players ringed and named, the frame, what was measured, the records", () => {
+    const { b, v, roots } = shell();
+    const scene = v.scene as FakeScene;
+    const flaw = b.story.findIndex((s) => s.kind === "flaw");
+    roots.ribbon.querySelectorAll<HTMLButtonElement>(".rr-node-btn")[flaw].click();
+    roots.stage.querySelector<HTMLButtonElement>(".rr-claim")!.click();
+    const proof = b.proofs.beats[b.story[flaw].beat_id];
+    expect(v.proof).toBe(proof);
+    expect(v.clock.frameId).toBe(2419); // the frame the link ends at
+    expect(v.story.playing).toBe(false);
+    expect(scene.highlighted).toEqual(["NBR-05", "EPA-11", "EPA-08"]); // Novak, the runner, the passer
+    expect(scene.labels).toEqual(["#5 Novak", "#11 Ferraro", "#8 Hale"]);
+    expect(scene.overlays.length).toBeGreaterThan(0); // the link stays drawn
+    const box = roots.side.querySelector<HTMLElement>(".rr-evidence")!;
+    const text = box.textContent!;
+    expect(text).toContain("space worth +0.012 of a scoring chance"); // the measured change, with its meaning
+    expect(text).toContain("frame 2419");
+    expect(text).toContain("ev00220 · pass · Robin Hale"); // the feed's own event id
+    expect([...box.querySelectorAll(".rr-player-chip")].map((c) => c.textContent)).toEqual(
+      ["#5 Jordan Novakdefender", "#11 Jordan Ferrarorunner", "#8 Robin Haleused the space"]);
+    box.querySelector<HTMLButtonElement>(".rr-icon-btn")!.click(); // close: back to the step
+    expect(v.proof).toBeNull();
+    expect(roots.side.querySelector(".rr-evidence")).toBeNull();
+  });
+
+  it("a fact in the chain opens its own proof", () => {
+    const { v, roots, ui } = shell();
+    ui.state.setView("explore");
+    roots.side.querySelector<HTMLButtonElement>('.rr-row[data-id="a157"]')!.click();
+    expect(v.proof).not.toBeNull();
+    expect(roots.side.querySelector(".rr-evidence")!.textContent).toContain(
+      "Sam Adeyemi's pass raised Eastport Athletic's chance of scoring by 0.087 (VAEP).");
   });
 
   it("the chain is collapsed in Story and open in Explore", () => {

@@ -44,6 +44,14 @@ What it shows:
   name tag, eases the camera onto them, draws that step's overlay alone, and shows one caption and one meter.
   Steps advance every 3 s (the climax beats stay longer; the speed control scales it), by hand with ◀ / ▶,
   or with the keyboard: **Space** plays / pauses (it never scrolls the page), **← / →** step.
+* **Evidence on demand.** Every claim proves itself. The step card is compact and docked bottom-left: the
+  claim in one or two lines and its evidence status ("✓ Evidence · 1 event · frame 2419"); "Why" expands the
+  rest of the telling and what was measured. Clicking the claim (or a fact in the chain) opens its proof: the
+  clock seeks to the proof's frame, every player it involves is ringed and named (everyone else dims), the
+  camera closes in, and the panel lists what was measured, with the number and its meaning ("Jordan Novak's
+  position gave up space worth +0.012 of a scoring chance at the shot spot"), the players and their roles,
+  the frames, and the feed's own event ids (`ev00220`). All of it is the bundle's `proofs`, read off the
+  account by the exporter; Fan shows the same proof in words, with the records but no metrics.
 * **The causal-chain ribbon** under the pitch: one node per beat with the role icon, a ring in the team's
   colour and a bar for the fact's normalized |effect| (green helped the chance, red cost it); the lead
   carries the accent ring, the defensive flaw a red one; computed links and context have their own icons;

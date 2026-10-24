@@ -66,7 +66,7 @@ from replay_room.render.display import (KITS, contribution_display, match_clock,
                                         outcome_display, score_before)
 from replay_room.metrics.pass_value import frame_ids_at
 
-BUNDLE_VERSION = "4"
+BUNDLE_VERSION = "5"
 
 
 def _r(v: float) -> float | None:

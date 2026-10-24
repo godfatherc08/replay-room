@@ -269,11 +269,54 @@ export interface StoryStep {
   plain: string; // fan register: no numbers, no jargon
 }
 
+/** The proof behind a claim (render.proof): who, which frames, which feed events, what was measured. */
+export interface ProofPlayer {
+  player_id: string;
+  name: string;
+  shirt_number: number | null;
+  team_id: string | null;
+  role: string; // "actor", "defender", "runner", "used the space", "shooter", "chose", ...
+}
+
+export interface ProofFrame {
+  frame_id: number;
+  timestamp: number;
+  match_clock: string;
+  what: string; // "where the run ended", "the decision", ...
+}
+
+export interface ProofEvent {
+  action_id: number;
+  original_event_id: string; // the feed's own id
+  type: string;
+  result: string;
+  player_id: string;
+  player: string;
+  t: number;
+  match_clock: string;
+}
+
+export interface Measured {
+  metric: string; // "VAEP", "ΔxT", "pitch control", "xG", "tracking", "line height", "pass model"
+  value: number | null;
+  statement: string; // the number with its meaning (Analyst)
+  plain: string; // the same meaning without a number (Fan)
+  magnitude: number | null; // |effect| / the moment's largest, for the meter
+}
+
+export interface Proof {
+  players: ProofPlayer[];
+  frames: ProofFrame[];
+  events: ProofEvent[];
+  measured: Measured[];
+  focus_frame: number;
+}
+
 /** Story kinds that tell one contribution of the account. */
 export const FACT_KINDS: ReadonlySet<BeatKind> = new Set(["build_up", "lead", "flaw", "punish"]);
 
 export interface Bundle {
-  bundle_version: "4";
+  bundle_version: "5";
   match: MatchInfo;
   goalkeepers: string[];
   display: DisplayRow[];
@@ -294,6 +337,7 @@ export interface Bundle {
   meaning: Meaning[];
   outcome_display: OutcomeDisplay;
   story: StoryStep[];
+  proofs: { contributions: Record<string, Proof>; beats: Record<string, Proof> };
 }
 
 export interface IndexEntry {
@@ -306,12 +350,12 @@ export interface IndexEntry {
 
 const REQUIRED = ["account", "pitch", "teams", "frames", "objects", "tracks", "events", "key_spot", "jumps", "match",
                   "goalkeepers", "display", "narration", "plan", "context", "match_moments", "meaning",
-                  "outcome_display", "story"] as const;
+                  "outcome_display", "story", "proofs"] as const;
 
 export function parseBundle(data: unknown): Bundle {
   if (typeof data !== "object" || data === null) throw new Error("bundle is not an object");
   const b = data as Record<string, unknown>;
-  if (b.bundle_version !== "4") throw new Error(`unsupported bundle version ${String(b.bundle_version)}`);
+  if (b.bundle_version !== "5") throw new Error(`unsupported bundle version ${String(b.bundle_version)}`);
   for (const key of REQUIRED) if (!(key in b)) throw new Error(`bundle is missing "${key}"`);
   const bundle = data as Bundle;
   const frames = new Set(bundle.frames.frame_ids);
@@ -320,6 +364,9 @@ export function parseBundle(data: unknown): Bundle {
   }
   for (const s of bundle.story) {
     if (!frames.has(s.frame_id)) throw new Error(`story step ${s.index} targets frame ${s.frame_id}, not in the window`);
+  }
+  for (const p of [...Object.values(bundle.proofs.contributions), ...Object.values(bundle.proofs.beats)]) {
+    if (!frames.has(p.focus_frame)) throw new Error(`a proof opens at frame ${p.focus_frame}, not in the window`);
   }
   return bundle;
 }
