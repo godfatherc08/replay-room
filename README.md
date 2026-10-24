@@ -22,10 +22,12 @@ python -m pip install -e ".[dev]"
 Critic → Editor → bundle):
 
 ```
-python -m replay_room.render data/fixtures/synthetic_match_01
+python -m replay_room.render data/fixtures/synthetic_match_02
 ```
 
-This writes one bundle per moment to `data/accounts/` (it is git-ignored, so run this after every clone).
+The match is `synthetic_match_02` (seed 38), the onside-correct corpus: every scoring move is onside at the
+decisive pass, and offside appears only as deliberate, flagged moments. (`synthetic_match_01`, the earlier
+corpus, stays in the repo as the test fixture.) This writes one bundle per moment to `data/accounts/` (it is git-ignored, so run this after every clone).
 The Analyst and Storyteller use Microsoft Foundry when it is configured (see below). Without it, they fall
 back to the rule plan and the deterministic composer, and the Critic checks the result either way, so this
 step works offline.
@@ -47,11 +49,12 @@ Useful links:
 
 | What | URL |
 |---|---|
-| The hero moment (with the counterfactual) | <http://localhost:5173/?moment=SYN-0007-big_chance_saved-3> |
-| …playing straight away | <http://localhost:5173/?moment=SYN-0007-big_chance_saved-3&play=1> |
-| …in Fan mode | <http://localhost:5173/?moment=SYN-0007-big_chance_saved-3&mode=fan> |
-| …at a given story step (1-based) | <http://localhost:5173/?moment=SYN-0007-big_chance_saved-3&step=11> |
-| A goal | <http://localhost:5173/?moment=SYN-0007-goal-1> |
+| The hero moment (a computed link and a context deviation) | <http://localhost:5173/?moment=SYN-0038-big_chance_saved-3> |
+| …playing straight away | <http://localhost:5173/?moment=SYN-0038-big_chance_saved-3&play=1> |
+| …in Fan mode | <http://localhost:5173/?moment=SYN-0038-big_chance_saved-3&mode=fan> |
+| …at a given story step (1-based) | <http://localhost:5173/?moment=SYN-0038-big_chance_saved-3&step=5> |
+| A goal | <http://localhost:5173/?moment=SYN-0038-goal-2> |
+| A chance with two computed links | <http://localhost:5173/?moment=SYN-0038-big_chance_saved-2> |
 
 Other parameters: `&view=explore`, `&jump=<contribution_id>` (Explore, at that fact), `&stadium=0` (the
 bare pitch). The viewer's own README (`viewer/README.md`) describes everything on screen.
@@ -67,7 +70,7 @@ python -m pip install -e ".[foundry]"
 az login
 set FOUNDRY_PROJECT_ENDPOINT=<your project endpoint>      # macOS / Linux: export ...
 set FOUNDRY_MODEL_DEPLOYMENT=<your model deployment>
-python -m replay_room.render data/fixtures/synthetic_match_01
+python -m replay_room.render data/fixtures/synthetic_match_02
 ```
 
 Tellings are cached in `data/narrations/` and re-checked by the Critic before they are used.

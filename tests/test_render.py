@@ -182,7 +182,8 @@ def test_meaning_glosses_every_contribution(bundles):
         assert max(m["magnitude"] for m in rows) == 1.0
     hero = {m["contribution_id"]: m for m in bundles["SYN-0007-big_chance_saved-3"]["meaning"]}
     assert hero["d163"]["gloss"] == "the miss that let them off" and not hero["d163"]["positive"]
-    assert hero["a157"]["gloss"] == "a dangerous pass"  # VAEP +0.087 >= DANGEROUS_VALUE
+    assert hero["a162"]["gloss"] == "a dangerous carry"  # VAEP >= DANGEROUS_VALUE
+    assert hero["a157"]["gloss"] == "moved the ball forward"  # VAEP +0.026: below it
     assert hero["a159"]["gloss"] == "moved the ball forward"
     assert hero["a161"]["gloss"] == "set up the shot"
     assert hero["sEPA-11"]["icon"] == "run" and hero["sNBR-05"]["gloss"] == "left space open"
@@ -252,6 +253,6 @@ def test_every_claim_carries_its_proof_from_the_account(bundles, match):
     assert [e["original_event_id"] for e in p["events"]] == ["ev00220"]
     assert "space worth +0.012 of a scoring chance" in p["measured"][1]["statement"]
     a157 = hero["proofs"]["contributions"]["a157"]["measured"][0]
-    assert a157["statement"] == ("Sam Adeyemi's pass raised Eastport Athletic's chance of scoring by 0.087 (VAEP): "
-                                 "the largest of the 8 facts that built the chance, 58% of the 0.152 xG chance "
-                                 "(next: +0.037).")
+    assert a157["statement"] == ("Sam Adeyemi's pass raised Eastport Athletic's chance of scoring by 0.026 (VAEP): "
+                                 "the fifth largest of the 8 facts that built the chance, 17% of the 0.155 xG chance "
+                                 "(largest: +0.071).")

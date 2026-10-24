@@ -5,7 +5,7 @@ as the agents planned and wrote it. Every word, number, meter and overlay is a b
 match context, the Critic-checked telling, meaning, match info); what the bundle lacks is left out, never
 filled in.
 
-* **Bundles** come from the exporter: `python -m replay_room.render data/fixtures/synthetic_match_01`
+* **Bundles** come from the exporter: `python -m replay_room.render data/fixtures/synthetic_match_02`
   writes `data/accounts/<game>/<moment>.bundle.json` (bundle v4) and `data/accounts/index.json`, embedding
   the framing plan, the match context and the telling (the Foundry agents when configured, else the rule plan
   and the deterministic composer; Critic-checked either way). The dev server and
@@ -13,7 +13,7 @@ filled in.
 * **Dev harness** (no backend), from the repo root with the project venv active:
 
   ```
-  python -m replay_room.render data/fixtures/synthetic_match_01
+  python -m replay_room.render data/fixtures/synthetic_match_02
   cd viewer && npm install && npm run dev
   ```
 

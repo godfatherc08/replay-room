@@ -14,6 +14,17 @@ normalisation and the generator exercises the same path a real feed will:
     <out>/events.jsonl       one raw event per line
     <out>/tracking.csv.gz    one row per object per frame (ball included)
 
+Offside (generator v2). At the instant a pass is played, a receiver is offside
+when, in the opponents' half, they are nearer the opponents' goal line than both
+the ball and the second-to-last opponent (the keeper usually being the last).
+Passes are only played to onside receivers; a forward run holds level with that
+line until the ball is played to the runner, who then runs on to meet it, so a
+through ball is onside at the pass and the runner is beyond the line when it
+arrives. A few runs are deliberately mistimed (``MISTIMED_RUN``): the runner
+drifts beyond the line, and a pass to them is flagged offside (``Pass`` with
+``outcome: offside``): play stops and the defending team restarts with a free
+kick. Offside is a labelled event, never an accident inside a scoring move.
+
 Reproducibility: ``generate_match(seed)`` is a pure function of its arguments.
 It simulates attempt 0, 1, 2, ... (each seeded from ``(seed, attempt)``) and
 keeps the first match with at least one goal preceded by a >= 3-pass build-up.
@@ -36,13 +47,14 @@ import numpy as np
 import pandas as pd
 
 FEED_VERSION = "synthetic-v1"
-GENERATOR_VERSION = "1"
+GENERATOR_VERSION = "2"  # 2: onside passes, line-holding runs, deliberate offsides
 FPS = 10
 DT = 1.0 / FPS
 L, W = 105.0, 68.0
 CY = W / 2
 GOAL_HALF_WIDTH = 3.66
 MAX_ATTEMPTS = 50
+MISTIMED_RUN = 0.12  # share of forward runs that drift offside (and are flagged if found by a pass)
 
 # (position, depth fraction, width fraction); depth 0 = own goal line.
 FORMATIONS: dict[str, list[tuple[str, float, float]]] = {
@@ -124,6 +136,7 @@ class _Sim:
         self.beaten_until = np.full(self.n, -1.0)
         self.run_until = np.full(self.n, -1.0)
         self.run_target = np.zeros((self.n, 2))
+        self.mistimed = np.zeros(self.n, dtype=bool)  # this run goes beyond the line: a pass to it is offside
         self.last_pressure: dict[int, float] = {}
 
         self.events: list[dict[str, Any]] = []
@@ -157,6 +170,16 @@ class _Sim:
         d = np.hypot(*(self.pos[idxs] - point).T)
         k = int(np.argmin(d))
         return int(idxs[k]), float(d[k])
+
+    def offside_line(self, team: int) -> float:
+        """Depth (towards the goal ``team`` attacks) beyond which a team-mate is offside: the further of the ball
+        and the second-to-last opponent, never inside the team's own half."""
+        opp = self.players_of(1 - team)
+        second_last = float(np.sort([self.depth(team, self.pos[j, 0]) for j in opp])[-2])
+        return max(second_last, self.depth(team, self.ball[0]), L / 2)
+
+    def is_offside(self, i: int) -> bool:
+        return self.depth(self.team[i], self.pos[i, 0]) > self.offside_line(self.team[i]) + 1e-6
 
     def def_line_depth(self, team: int) -> float:
         dfs = [i for i in self.players_of(team) if self.role[i] == "DF"]
@@ -319,6 +342,8 @@ class _Sim:
             d = float(np.hypot(*(self.pos[m] - self.pos[o])))
             if not 5.0 <= d <= 45.0:
                 continue
+            if self.is_offside(m) and not self.mistimed[m]:
+                continue  # an offside team-mate is not an option
             progress = self.depth(team, self.pos[m, 0]) - self.depth(team, self.pos[o, 0])
             openness = min(float(np.hypot(*(self.pos[opp] - self.pos[m]).T).min()), 10.0)
             lane = min(min(_seg_dist(self.pos[j], self.pos[o], self.pos[m])[0] for j in opp), 8.0)
@@ -332,7 +357,26 @@ class _Sim:
             return
         p = np.exp(2.0 * (np.array(scores) - max(scores)))
         receiver = cands[int(self.rng.choice(len(cands), p=p / p.sum()))]
+        if self.is_offside(receiver):  # the mistimed run, found: the flag goes up
+            self.flag_offside(o, receiver)
+            return
         self.start_pass(o, receiver, kind="GoalKick" if self.pending_goalkick else "Pass")
+
+    def flag_offside(self, o: int, r: int) -> None:
+        """A pass to an offside team-mate: flagged where it is played, play stops, the defenders restart."""
+        self.pending_goalkick = False
+        self.end_carry(o)
+        foot = "right_foot" if self.right_footed[o] else "left_foot"
+        self.emit("Pass", o, self.pos[o].copy(), body_part=foot, recipient=self.ids[r], outcome="offside",
+                  end_x=float(self.pos[r, 0]), end_y=float(self.pos[r, 1]))
+        defenders = self.players_of(1 - self.team[o])
+        taker, _ = self.nearest(np.array([j for j in defenders if self.role[j] != "GK"]), self.pos[r])
+        self.mode = "dead"
+        self.owner = None
+        self.mistimed[r] = False
+        self.run_until[r] = -1.0
+        self.dead = {"kind": "freekick", "team": int(self.team[taker]), "timer": 4 * FPS,
+                     "dest": np.clip(self.pos[r].copy(), [1.0, 1.0], [L - 1.0, W - 1.0]), "keeper": taker}
 
     def start_pass(self, o: int, r: int, kind: str = "Pass", force_success: bool = False) -> None:
         self.pending_goalkick = False
@@ -429,10 +473,10 @@ class _Sim:
         if dead["kind"] == "kickoff":
             self.start_kickoff(dead["team"])
             return
-        keeper = dead["keeper"]
+        keeper = dead["keeper"]  # the goal kick's keeper, or the free kick's taker
         self.ball[:] = self.pos[keeper]
         self.take_ball(keeper)
-        self.pending_goalkick = True
+        self.pending_goalkick = dead["kind"] == "goalkick"
         self.choose_pass(keeper)
         if self.mode == "owned":  # nobody in range: just keep it, try again shortly
             self.hold = 0.5
@@ -470,7 +514,7 @@ class _Sim:
                 self.attack_targets(ti, idx, tgt, cap, t)
             else:
                 self.defend_targets(ti, idx, tgt, cap)
-        if self.mode == "dead" and self.dead["kind"] == "goalkick":
+        if self.mode == "dead" and self.dead["kind"] in ("goalkick", "freekick"):
             k = self.dead["keeper"]
             tgt[k] = self.dead["dest"]
         if self.mode == "flight":
@@ -482,7 +526,9 @@ class _Sim:
 
     def attack_targets(self, ti: int, idx: np.ndarray, tgt: np.ndarray, cap: np.ndarray, t: float) -> None:
         opp_line = L - self.def_line_depth(1 - ti)  # opponents' last line, in our depth
+        onside = self.offside_line(ti) - 0.4  # level with the line: the furthest a runner waits before the pass
         ball_depth = self.depth(ti, self.ball[0])
+        receiving = self.flight["target"] if self.mode == "flight" and self.flight["kind"] == "pass" else None
         for i in idx:
             if self.role[i] == "GK":
                 continue
@@ -490,6 +536,8 @@ class _Sim:
                 continue
             if self.run_until[i] > t:
                 tgt[i] = self.run_target[i]
+                if i != receiving and not self.mistimed[i] and self.depth(ti, tgt[i, 0]) > onside:
+                    tgt[i, 0] = self.x_at(ti, onside)  # time the run: level until the ball is played
                 continue
             hazard = {"FW": 0.25, "MF": 0.07}.get(self.role[i], 0.0)
             if ball_depth > 35 and self.rng.random() < hazard * DT:
@@ -497,11 +545,13 @@ class _Sim:
                 y = float(np.clip(self.pos[i, 1] + self.rng.normal(0, 6) + 0.3 * (CY - self.pos[i, 1]), 6, W - 6))
                 self.run_target[i] = (self.x_at(ti, d), y)
                 self.run_until[i] = t + 2.5
+                self.mistimed[i] = self.rng.random() < MISTIMED_RUN
                 tgt[i] = self.run_target[i]
                 continue
+            self.mistimed[i] = False
             d = self.depth(ti, tgt[i, 0])
-            if d > opp_line + 0.5:  # hold the line rather than stand offside
-                tgt[i, 0] = self.x_at(ti, opp_line + 0.5)
+            if d > min(opp_line + 0.5, onside):  # hold the line rather than stand offside
+                tgt[i, 0] = self.x_at(ti, min(opp_line + 0.5, onside))
         if self.mode == "owned" and self.team[self.owner] == ti:
             o = self.owner
             if self.role[o] == "GK":

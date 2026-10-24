@@ -70,6 +70,7 @@ def test_fixture_moments_by_class(explained):
         ("big_chance_saved", "ev00034", ("turnover_to_shot",)),
         ("goal", "ev00052", ("turnover_to_shot",)),
         ("turnover_to_shot", "ev00090", ()),
+        ("turnover_to_shot", "ev00137", ()),
         ("goal", "ev00158", ()),
         ("turnover_to_shot", "ev00171", ()),
         ("goal", "ev00178", ("turnover_to_shot",)),
@@ -96,8 +97,9 @@ def test_turnover_to_shot_on_fixture(explained, match):
     lost = match.actions.set_index("action_id").loc[m.turnover_event_ref.action_id]
     assert lost["team_id"] == m.defending_team_id
     assert m.t_event - m.chain[0].time_seconds <= TURNOVER_TO_SHOT_SECONDS
-    # the possession that led to NBR's long-range effort (xG 0.04) started with a regain too, but is no moment
-    assert "ev00137" not in {c.moment.key_event_ref.original_event_id for c in explained}
+    # every qualifying shot after a regain is listed, even a low-value one (NBR's effort, xG 0.058)
+    (late,) = [c.moment for c in explained if c.moment.key_event_ref.original_event_id == "ev00137"]
+    assert late.type == "turnover_to_shot" and late.outcome_xg < 0.1
 
 
 def test_big_chance_saved_on_fixture(explained):
@@ -113,7 +115,7 @@ def test_dispatcher_subset_and_errors(match):
     assert [c.moment.moment_id for c in only] == [f"SYN-0007-big_chance_saved-{i}" for i in (1, 2, 3)]
     assert all(c.moment.secondary_types == () for c in only)  # nothing else requested to share with
     turnovers = detect_moments(match.actions, match.tracking, match.meta, ["turnover_to_shot"])
-    assert len(turnovers) == 7  # unclaimed by goals / big chances, every qualifying shot is listed
+    assert len(turnovers) == 8  # unclaimed by goals / big chances, every qualifying shot is listed
     with pytest.raises(ValueError, match="unknown moment classes"):
         detect_moments(match.actions, match.tracking, match.meta, ["red_card"])
 
@@ -325,10 +327,10 @@ def test_cli_lists_all_explained_classes(fixture_dir):
     out = io.StringIO()
     assert main([str(fixture_dir), "--classes", "goal,turnover_to_shot,big_chance_saved,penalty"], out=out) == 0
     text = out.getvalue()
-    assert text.startswith("SYN-0007: 10 moment(s)  goal 4, turnover_to_shot 3, big_chance_saved 3\n")
+    assert text.startswith("SYN-0007: 11 moment(s)  goal 4, turnover_to_shot 4, big_chance_saved 3\n")
     assert "SYN-0007-big_chance_saved-1  big_chance_saved  [1 00:20.9]" in text
-    assert "outcome: ev00034 no goal  xG 0.174  also turnover_to_shot" in text
-    assert text.count("engine_eligible") == 10
+    assert "outcome: ev00034 no goal  xG 0.175  also turnover_to_shot" in text
+    assert text.count("engine_eligible") == 11
     default = io.StringIO()
     main([str(fixture_dir)], out=default)
     assert default.getvalue() == text  # the default is the explained classes

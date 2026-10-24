@@ -67,7 +67,8 @@ def test_a_goal_is_never_headlined_by_a_minor_failure(accounts):
     a = accounts["SYN-0007-goal-3"]  # was headlined "Alex Hale, goalkick fail"
     assert a.headline.contribution_id == "a127" and a.headline.team_id == a.outcome.beneficiary_team_id
     assert a.headline.action == "interception"  # Larsen won the goal kick: the proximate, decisive act
-    assert a.supporting.action == "goalkick_fail" and a.supporting.role == "defensive_error"
+    assert a.supporting.team_id == "NBR" and a.supporting.role == "defensive_error"  # pointed at, never the lead
+    assert a.supporting.kind == "marking_break" and a.supporting.player_id == "NBR-04"  # Okafor loses Brandt
     for acc in accounts.values():
         if acc.outcome.scored:
             assert acc.headline.team_id == acc.outcome.beneficiary_team_id
@@ -93,7 +94,7 @@ def test_links_are_measured_not_inferred(accounts, match):
             d = _by_id(acc)[other.defender_contribution_id]
             assert d.team_id == acc.outcome.conceding_team_id and d.track == "off_ball"
             assert other.player_ids <= {p.player_id for p in acc.participants}
-    assert not accounts["SYN-0007-goal-3"].links  # no geometric pattern held: no link is asserted
+    assert not accounts["SYN-0007-turnover_to_shot-1"].links  # no geometric pattern held: no link is asserted
     assert a.outcome.zone == link.zone == "the six-yard box"  # the zone he left is where the shot came from
 
 
@@ -137,7 +138,7 @@ def test_a_miss_denies_itself(accounts):
 def test_threshold_filters_incidental_touches(accounts):
     a = accounts["SYN-0007-goal-1"]
     cited = {c.evidence[0].action_id for c in a.contributions if c.track == "on_ball"}
-    assert {32, 33, 34} & cited == set()  # passes and a dribble worth < 0.003
+    assert {32, 34} & cited == set()  # touches worth less than the threshold
     for acc in accounts.values():
         assert len(acc.contributions) <= TOP_K + 1
         assert all(abs(c.effect) >= EFFECT_THRESHOLD for c in acc.contributions)
@@ -291,7 +292,7 @@ def test_cli(fixture_dir):
     text = out.getvalue()
     assert text.startswith("3 causal account(s)\n")
     assert "PREVENTED (a goal that didn't happen)" in text
-    assert "headline: d23  prevention  NBR-01 keeper_save  effect -0.174  (event #23)" in text
+    assert "headline: d23  prevention  NBR-01 keeper_save  effect -0.175  (event #23)" in text
     out = io.StringIO()
     main([str(fixture_dir), "--classes", "goal", "--json"], out=out)
     assert [CausalAccount.model_validate(d).moment.type for d in json.loads(out.getvalue())] == ["goal"] * 4

@@ -1,5 +1,5 @@
 {
-  "corpus": "c3-g1-n200-s1000",
+  "corpus": "c3-g2-n200-s1000",
   "n_games": 200,
   "split": {
     "train": 120,
@@ -8,40 +8,40 @@
   },
   "sklearn": "1.9.1",
   "xg": {
-    "n": 568,
-    "auc": 0.6568550497121926,
-    "log_loss": 0.38092321577113153,
-    "log_loss_base": 0.4000757670960148,
-    "brier": 0.11500872650395672,
-    "brier_base": 0.11846607815909538,
+    "n": 541,
+    "auc": 0.6804460245636716,
+    "log_loss": 0.34667217636418207,
+    "log_loss_base": 0.3672195170029097,
+    "brier": 0.10072603660969436,
+    "brier_base": 0.10571236260638714,
     "passed": true
   },
   "pass": {
-    "n": 3519,
-    "auc": 0.6615443362068492,
-    "log_loss": 0.4463883284277459,
-    "log_loss_base": 0.469916594593575,
-    "brier": 0.13989370121954028,
-    "brier_base": 0.1469770605896089,
+    "n": 3678,
+    "auc": 0.6723438125423756,
+    "log_loss": 0.4397618800383904,
+    "log_loss_base": 0.46471575708739316,
+    "brier": 0.13773880453580847,
+    "brier_base": 0.14478989899527517,
     "passed": true,
     "receiver_source": {
-      "feed": 17524
+      "feed": 18525
     }
   },
   "vaep": {
     "scores": {
-      "auc": 0.7361195363217201,
-      "brier": 0.06530864719185168,
-      "brier_base": 0.07595641135813976,
-      "brier_skill": 0.1401825596536298,
-      "positive_rate": 0.08281468309411914
+      "auc": 0.7550244816892212,
+      "brier": 0.055214458846016945,
+      "brier_base": 0.06453615918567536,
+      "brier_skill": 0.14444151088755042,
+      "positive_rate": 0.06934487021013597
     },
     "concedes": {
-      "auc": 0.8139970305259395,
-      "brier": 0.01491517317408766,
-      "brier_base": 0.015255872999360853,
-      "brier_skill": 0.022332371624191327,
-      "positive_rate": 0.015495998983868919
+      "auc": 0.8665475804288508,
+      "brier": 0.010008195430534488,
+      "brier_base": 0.010880208898348466,
+      "brier_skill": 0.08014675783902858,
+      "positive_rate": 0.011001236093943139
     },
     "passed": true,
     "chosen_params": {
@@ -69,7 +69,7 @@
             "max_leaf_nodes": 31,
             "min_samples_leaf": 40
           },
-          "tune_brier": 0.0683053511069772
+          "tune_brier": 0.05272208489134474
         },
         {
           "params": {
@@ -78,7 +78,7 @@
             "max_leaf_nodes": 15,
             "min_samples_leaf": 100
           },
-          "tune_brier": 0.06679096336455044
+          "tune_brier": 0.05120254827884042
         },
         {
           "params": {
@@ -88,7 +88,7 @@
             "min_samples_leaf": 200,
             "l2_regularization": 1.0
           },
-          "tune_brier": 0.06614733954730485
+          "tune_brier": 0.05044925383978469
         }
       ],
       "concedes": [
@@ -99,7 +99,7 @@
             "max_leaf_nodes": 31,
             "min_samples_leaf": 40
           },
-          "tune_brier": 0.014466723365173278
+          "tune_brier": 0.008572040101527059
         },
         {
           "params": {
@@ -108,7 +108,7 @@
             "max_leaf_nodes": 15,
             "min_samples_leaf": 100
           },
-          "tune_brier": 0.014040232933034642
+          "tune_brier": 0.008355454373712733
         },
         {
           "params": {
@@ -118,7 +118,7 @@
             "min_samples_leaf": 200,
             "l2_regularization": 1.0
           },
-          "tune_brier": 0.01399608664647389
+          "tune_brier": 0.008160602483643899
         }
       ]
     },

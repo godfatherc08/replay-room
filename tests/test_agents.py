@@ -1,5 +1,6 @@
 import io
 import json
+import re
 
 import pytest
 
@@ -95,7 +96,7 @@ def test_analyst_brief_is_tool_output_only(all_accounts, all_contexts):
 def test_scout_builds_the_described_menu_in_match_order(engine, fixture_dir):
     scout = Scout(engine, FixtureStream(fixture_dir))
     menu = scout.watch()
-    assert scout.events_seen == 279 and len(menu) == 10 and all(m.explainable for m in menu)
+    assert scout.events_seen == 279 and len(menu) == 11 and all(m.explainable for m in menu)
     assert [(m.period_id, m.t) for m in menu] == sorted((m.period_id, m.t) for m in menu)
     hero = next(m for m in menu if m.moment_id == HERO)
     assert hero.description == "04:03 · Big chance for Eastport Athletic: Jordan Ferraro is denied."
@@ -152,7 +153,7 @@ def test_editor_translation_is_checked_and_falls_back(all_accounts, all_contexts
             self.keep = keep_numbers
 
         def translate(self, texts, to):
-            return [f"[{to}] {t}" if self.keep else f"[{to}] {t}".replace("22%", "99%") for t in texts]
+            return [f"[{to}] {t}" if self.keep else re.sub(r"\d+%", "99%", f"[{to}] {t}") for t in texts]
 
     ok = Editor(translator=FakeTranslator(True)).edit(n, a, plan, ctx, "analyst", language="fr")
     assert ok.translated and ok.language == "fr" and ok.headline.startswith("[fr] ")

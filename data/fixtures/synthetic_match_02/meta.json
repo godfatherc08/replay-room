@@ -1,0 +1,184 @@
+{
+  "feed_version": "synthetic-v1",
+  "match_id": "SYN-0038",
+  "competition": "Replay Room Synthetic League",
+  "pitch": {
+    "length_m": 105.0,
+    "width_m": 68.0
+  },
+  "coordinates": {
+    "origin": "centre",
+    "units": "m",
+    "y_axis": "towards the left touchline of a team attacking +x"
+  },
+  "frame_rate_hz": 10,
+  "periods": [
+    {
+      "id": 1,
+      "duration_s": 150.0,
+      "home_attacks": "+x"
+    },
+    {
+      "id": 2,
+      "duration_s": 150.0,
+      "home_attacks": "-x"
+    }
+  ],
+  "teams": {
+    "home": {
+      "id": "NBR",
+      "name": "Northbridge FC",
+      "formation": "4-3-3",
+      "players": [
+        {
+          "id": "NBR-01",
+          "name": "Alex Hale",
+          "number": 1,
+          "position": "GK"
+        },
+        {
+          "id": "NBR-02",
+          "name": "Sam Brandt",
+          "number": 2,
+          "position": "DF"
+        },
+        {
+          "id": "NBR-05",
+          "name": "Jordan Novak",
+          "number": 5,
+          "position": "DF"
+        },
+        {
+          "id": "NBR-06",
+          "name": "Casey Larsen",
+          "number": 6,
+          "position": "DF"
+        },
+        {
+          "id": "NBR-03",
+          "name": "Riley Adeyemi",
+          "number": 3,
+          "position": "DF"
+        },
+        {
+          "id": "NBR-08",
+          "name": "Morgan Ferraro",
+          "number": 8,
+          "position": "MF"
+        },
+        {
+          "id": "NBR-04",
+          "name": "Jamie Okafor",
+          "number": 4,
+          "position": "MF"
+        },
+        {
+          "id": "NBR-10",
+          "name": "Taylor Silva",
+          "number": 10,
+          "position": "MF"
+        },
+        {
+          "id": "NBR-07",
+          "name": "Robin Mensah",
+          "number": 7,
+          "position": "FW"
+        },
+        {
+          "id": "NBR-09",
+          "name": "Drew Costa",
+          "number": 9,
+          "position": "FW"
+        },
+        {
+          "id": "NBR-11",
+          "name": "Quinn Byrne",
+          "number": 11,
+          "position": "FW"
+        }
+      ]
+    },
+    "away": {
+      "id": "EPA",
+      "name": "Eastport Athletic",
+      "formation": "4-4-2",
+      "players": [
+        {
+          "id": "EPA-01",
+          "name": "Casey Okafor",
+          "number": 1,
+          "position": "GK"
+        },
+        {
+          "id": "EPA-02",
+          "name": "Riley Silva",
+          "number": 2,
+          "position": "DF"
+        },
+        {
+          "id": "EPA-05",
+          "name": "Morgan Mensah",
+          "number": 5,
+          "position": "DF"
+        },
+        {
+          "id": "EPA-06",
+          "name": "Jamie Costa",
+          "number": 6,
+          "position": "DF"
+        },
+        {
+          "id": "EPA-03",
+          "name": "Taylor Byrne",
+          "number": 3,
+          "position": "DF"
+        },
+        {
+          "id": "EPA-08",
+          "name": "Robin Hale",
+          "number": 8,
+          "position": "MF"
+        },
+        {
+          "id": "EPA-04",
+          "name": "Drew Brandt",
+          "number": 4,
+          "position": "MF"
+        },
+        {
+          "id": "EPA-10",
+          "name": "Quinn Novak",
+          "number": 10,
+          "position": "MF"
+        },
+        {
+          "id": "EPA-07",
+          "name": "Alex Larsen",
+          "number": 7,
+          "position": "MF"
+        },
+        {
+          "id": "EPA-09",
+          "name": "Sam Adeyemi",
+          "number": 9,
+          "position": "FW"
+        },
+        {
+          "id": "EPA-11",
+          "name": "Jordan Ferraro",
+          "number": 11,
+          "position": "FW"
+        }
+      ]
+    }
+  },
+  "final_score": {
+    "home": 2,
+    "away": 0
+  },
+  "generator": {
+    "version": "2",
+    "seed": 38,
+    "attempt": 1
+  }
+}

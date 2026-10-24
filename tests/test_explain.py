@@ -75,17 +75,18 @@ def test_the_hero_story_points_at_the_flaw_through_its_link(hero, hero_ctx, hero
 def test_the_analyst_register_shows_its_ranking_exactly(hero, hero_ctx, hero_plan):
     story = compose(hero, hero_plan, hero_ctx)
     first = story.beats[0].text
-    assert first.endswith("VAEP +0.087: the largest of the 8 facts that built the chance, 58% of the 0.152 xG chance "
-                          "(next: +0.037).")
+    assert first.endswith("VAEP +0.026: the fifth largest of the 8 facts that built the chance, 17% of the 0.155 xG "
+                          "chance (largest: +0.071).")
     cf = story.beats[-1].text
-    assert "worth 0.169 against 0.097 for the pass to Ferraro, with a 77% chance of arriving" in cf
+    assert "worth 0.178 against 0.093 for the pass to Ferraro, with a 71% chance of arriving" in cf
 
 
 def test_a_goal_is_told_from_the_scoring_side(all_accounts, all_contexts):
     a = all_accounts["SYN-0007-goal-3"]
     story = compose(a, rules_plan(a, all_contexts["SYN-0007-goal-3"]), all_contexts["SYN-0007-goal-3"])
-    assert story.headline_fan == "Larsen's interception makes the goal for Eastport, after Hale's mistake."
-    assert "goalkick" not in story.headline and "goal kick" in " ".join(b.fan for b in story.beats)
+    assert story.headline_fan == "Larsen's interception makes the goal for Eastport, after Okafor's lapse."
+    assert "goalkick" not in story.headline  # never "Alex Hale, goalkick fail"
+    assert "Drew Brandt runs straight past Jamie Okafor" in " ".join(b.fan for b in story.beats)  # its computed link
 
 
 # --------------------------------------------------------------------------- the Critic's text rules
@@ -277,7 +278,7 @@ def test_the_deep_passage_is_positional_and_checked(hero, hero_ctx, hero_plan):
     assert "Novak is 16.8 m higher up the pitch than their average in this phase of play (medium confidence, " \
            "12 possessions)" in flaw.deep
     assert "pitch control of the middle of the box goes from 0.33 to 0.41 over 6.5 s" in flaw.deep
-    assert flaw.deep.endswith("The chance it all builds, worth 0.152 xG, is denied.")  # the outcome's framing
+    assert flaw.deep.endswith("The chance it all builds, worth 0.155 xG, is denied.")  # the outcome's framing
     assert "Novak is much higher up the pitch than usual" in flaw.deep_fan and not re.search(r"\d", flaw.deep_fan)
     bad = json.loads(json.dumps(_good(hero, hero_plan, hero_ctx)))
     i = _beat(hero_plan, "flaw")

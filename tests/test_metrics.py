@@ -66,7 +66,8 @@ def test_xt_dangerous_central_zones_highest(models):
     assert (xt.grid > 0).all()  # unsupported zones were filled, none left at zero
     centre_box, wide_final_third, own_half = xt.at(100, 34)[()], xt.at(100, 4)[()], xt.at(20, 34)[()]
     assert centre_box > wide_final_third > own_half
-    assert xt.grid.max() == pytest.approx(centre_box)
+    # the peak is one of the two central goal-mouth cells (y = 34 lies on the line between them)
+    assert xt.grid.max() == pytest.approx(max(xt.at(100, 30)[()], xt.at(100, 38)[()]))
     along = xt.at(np.array([10, 40, 70, 95]), np.full(4, 34.0))
     assert (np.diff(along) > 0).all()  # more dangerous closer to goal
 
