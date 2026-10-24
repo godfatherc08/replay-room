@@ -3,11 +3,12 @@
 It is the floor under the Foundry Storyteller and passes the same Critic.
 Every sentence is assembled from the records the beat points at: the player
 names, the action and signal labels, the computed link (who ran past whom,
-which zone), the context fact, the outcome's band and zone. Sizes become
-meaning, not payload: a contribution's share of the chance ("about a third of
-the chance"), a counterfactual's ratio ("nearly twice the value"); the analyst
-register may add the one number that grounds a comparison ("24 m from their
-goal, against a match norm of about 9 m"), the fan register never does.
+which zone), the context fact, the outcome's band and zone. The analyst register is exact and shows its
+comparison, never a rounded fraction or a bare "most valuable": a fact's value
+with its rank among the move's facts and its share of the chance ("VAEP
++0.077: the largest of the move's 5 facts, 70% of the 0.110 xG chance; next
++0.075"), the counterfactual's two values, the context's median. The fan
+register says the same thing in words, without numbers or jargon.
 
 Players are named in full at their first mention in the story, then by
 surname when no other participant shares it. Present tense throughout.
@@ -32,9 +33,7 @@ _NOUNS = {
     "corner_short": "corner", "take_on": "take-on", "bad_touch": "touch",
 }
 _WON = ("interception", "tackle", "clearance")
-_SHARES = ((0.9, "worth as much as the whole chance"), (0.7, "worth about three-quarters of the chance"),
-           (0.6, "worth about two-thirds of the chance"), (0.45, "worth about half the chance"),
-           (0.3, "worth about a third of the chance"), (0.22, "worth about a quarter of the chance"))
+_ORDINALS = ("", "", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh")
 
 
 def base_action(label: str | None) -> str:
@@ -60,19 +59,30 @@ def chance_band(value: float) -> str:
     return "a long shot"
 
 
-def share_words(share: float) -> str | None:
-    return next((words for floor, words in _SHARES if share >= floor), None)
+def ranked_phrase(a: CausalAccount, c: Contribution, with_value: bool = True) -> str:
+    """A fact's exact value, its rank by size among the facts that built the chance (the denial, which is -V by
+    definition, is not one of them), its share of the chance, and the comparison that shows the rank:
+    'VAEP +0.077: the largest of the 5 facts that built the chance, 70% of the 0.110 xG chance (next: +0.075).'"""
+    facts = sorted((x for x in a.contributions if x.kind != "chance_denied"), key=lambda x: (-abs(x.effect), x.rank))
+    n, v = len(facts), a.outcome.value
+    k = next(i for i, x in enumerate(facts) if x.contribution_id == c.contribution_id) + 1
+    place = "the largest" if k == 1 else f"the {_ORDINALS[k]} largest" if k < len(_ORDINALS) else f"number {k}"
+    share = f", {round(100 * abs(c.effect) / v)}% of the {v:.3f} {'xG' if a.outcome.value_source == 'xg' else 'xT'} "             f"chance" if v > 0 else ""
+    other = facts[1] if k == 1 and n > 1 else facts[0] if k > 1 else None
+    versus = "" if other is None else f" ({'next' if k == 1 else 'largest'}: {other.effect:+.3f})"
+    tail = f"{place} of the {n} facts that built the chance{share}{versus}."
+    return f"{metric_name(c)} {c.effect:+.3f}: {tail}" if with_value else tail
 
 
-def ratio_words(ratio: float) -> str:
-    """How much more an option was worth, in words: 'nearly twice as much'."""
-    if ratio >= 2.5:
-        return "more than twice as much"
-    if ratio >= 1.75:
-        return "nearly twice as much"
-    if ratio >= 1.35:
-        return "about half as much again"
-    return "more"
+def metric_name(c: Contribution) -> str:
+    """The metric a fact's value is in, as the analyst register names it."""
+    if c.kind == "chance_denied" or "outcome_value" in c.metrics:
+        return "xG"
+    if c.track == "off_ball":
+        return "Pitch control"
+    if "vaep" in c.metrics and c.metrics.get("value") == c.metrics["vaep"]:
+        return "VAEP"
+    return "ΔxT"
 
 
 def _cap(s: str) -> str:
@@ -101,11 +111,6 @@ class Teller:
         self.seen: set[str] = set()
         self.said: list[str] = []  # signals and links already told, to vary repeated patterns
         self.goal = "goal" if account.outcome.scored else "chance"
-        positives = [c for c in account.contributions if c.team_id == account.outcome.beneficiary_team_id
-                     and c.effect > 0 and c.kind != "chance_denied"]
-        self.top = max(positives, key=lambda c: c.effect).contribution_id if positives else None
-        lapses = [c for c in account.contributions if c.team_id == account.outcome.conceding_team_id and c.effect > 0]
-        self.worst = max(lapses, key=lambda c: c.effect).contribution_id if lapses else None
 
     # ------------------------------------------------------------------ names
 
@@ -128,16 +133,8 @@ class Teller:
 
     # ------------------------------------------------------------------ facts in words
 
-    def share(self, c: Contribution) -> str | None:
-        v = self.a.outcome.value
-        return share_words(abs(c.effect) / v) if v > 0 else None
-
-    def unit(self, c: Contribution) -> str:
-        if c.track == "off_ball":
-            return "pitch control"
-        if "vaep" in c.metrics and c.metrics.get("value") == c.metrics["vaep"]:
-            return "VAEP"
-        return "expected threat"
+    def ranked(self, c: Contribution) -> str:
+        return " " + ranked_phrase(self.a, c)
 
     def attacking(self, c: Contribution, lead: bool) -> tuple[str, str]:
         A, T = self.name(c.player_id), self.T
@@ -160,8 +157,7 @@ class Teller:
         elif c.effect < 0:
             fan = (f"{_poss(A)} {n} goes astray." if base in ("pass", "cross", "dribble")
                    else f"{_poss(A)} {n} costs {T} some of their threat.")
-            text = fan if c.contribution_id != self._most_negative() else \
-                f"{fan[:-1]}: by {self.unit(c)}, the biggest setback in the move."
+            text = fan + self.ranked(c)
         elif lead and base in _WON:
             fan = text = f"{A} wins the ball back for {T}{comes}"
         elif lead and base in ("pass", "cross") and c.role != "assist":
@@ -191,15 +187,8 @@ class Teller:
             fan = text = f"{_poss(A)} {n} keeps {T} going."
         if lead and c.role == "assist":
             fan, text = fan[:-1] + comes, text[:-1] + comes
-        if c.effect > 0 and (lead or c.contribution_id == self.top) and (words := self.share(c)) is not None:
-            best = " the most valuable action in the move," if c.contribution_id == self.top else ""
-            text += f" By {self.unit(c)} it is{best} {words}."
+        text += self.ranked(c)
         return text, fan
-
-    def _most_negative(self) -> str | None:
-        neg = [c for c in self.a.contributions if c.effect < 0 and c.team_id == self.a.outcome.beneficiary_team_id
-               and c.kind != "chance_denied"]
-        return min(neg, key=lambda c: c.effect).contribution_id if neg else None
 
     def denial(self, c: Contribution) -> tuple[str, str]:
         A, T = self.name(c.player_id), self.T
@@ -244,16 +233,15 @@ class Teller:
             else:
                 fan = f"{D} loses {M}."
             text = fan
-            if M is not None and "separation_end" in c.metrics:
-                text = (f"{fan[:-1]}: {self.peek(others[0])} ends up {c.metrics['separation_end']:.0f} m clear of "
+            if M is not None and "separation_end" in c.metrics:  # the separation, exactly
+                text = (f"{fan[:-1]}: {self.peek(others[0])} ends up {c.metrics['separation_end']:.1f} m clear of "
                         f"{self.peek(c.player_id)}.")
         else:
             where = self.a.outcome.zone
             fan = (f"{D} gives up the space in {where}, where the shot comes from." if where
                    else f"{D} gives up the space the shot comes from.")
             text = fan
-        if c.contribution_id == self.worst and c.effect > 0 and (words := self.share(c)) is not None:
-            text += f" By {self.unit(c)} it is the biggest lapse in the move, {words}."
+        text += self.ranked(c)
         return text, fan
 
     def link(self, link: Link) -> tuple[str, str]:
@@ -285,8 +273,8 @@ class Teller:
         fan = core + "."
         text = fan
         if "spot_distance_end" in link.metrics:
-            text += (f" {self.peek(link.defender_id)} ends up {link.metrics['spot_distance_end']:.0f} m from where "
-                     f"the shot is taken.")
+            text += (f" {self.peek(link.defender_id)} ends up {link.metrics['spot_distance_end']:.1f} m from where "
+                     f"the shot is taken, having started {link.metrics['spot_distance_start']:.1f} m from it.")
         return text, fan
 
     def context(self, f: ContextFact) -> tuple[str, str]:
@@ -295,13 +283,13 @@ class Teller:
         if f.kind == "line_height":
             way = "higher" if f.direction == "higher" else "deeper"
             fan = f"{_poss(Opp)} back line is standing much {way} than usual."
-            text = (f"With the ball in their third, {_poss(Opp)} back line is {f.here:.0f} m from their goal here, "
-                    f"against a match norm of about {f.baseline:.0f} m{small}.")
+            text = (f"With the ball in their third, {_poss(Opp)} back line is {f.here:.1f} m from their own goal line "
+                    f"here, against a match median of {f.baseline:.1f} m over {f.sample_size} defending spells{small}.")
         elif f.kind == "marking_distance":
             fan = (f"{_poss(T)} attackers have far more room than usual." if f.direction == "higher"
                    else f"{Opp} are marking much tighter than usual.")
-            text = (f"Attackers in {_poss(Opp)} third have about {f.here:.0f} m to the nearest defender here, "
-                    f"against {f.baseline:.0f} m usually{small}.")
+            text = (f"Attackers in {_poss(Opp)} third have {f.here:.1f} m to the nearest defender here, against a "
+                    f"match median of {f.baseline:.1f} m over {f.sample_size} defending spells{small}.")
         else:
             fan = f"{Opp} usually win the ball straight back, but not this time."
             text = (f"{Opp} won the ball back within {f.metrics['window_s']:.0f} seconds after "
@@ -338,7 +326,8 @@ class Teller:
         why = [p for p in (self.noun_phrase(lead, shooter), self.noun_phrase(self.plan.flaw_contribution_id, shooter))
                if p]
         came = f", and it came from {' and '.join(why)}" if why else ""
-        rated = f", rated {round(100 * o.value)}% before the shot"
+        rated = f", rated {round(100 * o.value)}% before the shot ({'xG' if o.value_source == 'xg' else 'xT'} " \
+                f"{o.value:.3f})"
         if o.scored:
             fan = f"Goal! {S} scores{zone}: {band}{came}."
             text = f"Goal: {S} scores{zone}: {band}{rated}{came}."
@@ -360,11 +349,10 @@ class Teller:
         if best.completion_prob is not None and best.completion_prob >= 0.85:
             fan = fan[:-1] + ", and it was very likely to arrive."
         text = f"Instead of the {chosen}, {C} had a better option: a {option}."
-        if cf.chosen_value > 0:
-            text += f" By the pass model it was worth {ratio_words(best.value / cf.chosen_value)}"
-            if best.completion_prob is not None:
-                text += f", with a {round(100 * best.completion_prob)}% chance of arriving"
-            text += "."
+        text += f" By the pass model it was worth {best.value:.3f} against {cf.chosen_value:.3f} for the {chosen}"
+        if best.completion_prob is not None:
+            text += f", with a {round(100 * best.completion_prob)}% chance of arriving"
+        text += "."
         return text, fan
 
     def headline(self) -> tuple[str, str]:

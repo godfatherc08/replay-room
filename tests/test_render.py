@@ -252,4 +252,6 @@ def test_every_claim_carries_its_proof_from_the_account(bundles, match):
     assert [e["original_event_id"] for e in p["events"]] == ["ev00220"]
     assert "space worth +0.012 of a scoring chance" in p["measured"][1]["statement"]
     a157 = hero["proofs"]["contributions"]["a157"]["measured"][0]
-    assert a157["statement"] == "Sam Adeyemi's pass raised Eastport Athletic's chance of scoring by 0.087 (VAEP)."
+    assert a157["statement"] == ("Sam Adeyemi's pass raised Eastport Athletic's chance of scoring by 0.087 (VAEP): "
+                                 "the largest of the 8 facts that built the chance, 58% of the 0.152 xG chance "
+                                 "(next: +0.037).")

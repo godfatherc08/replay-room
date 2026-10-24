@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import re
 
 import pytest
 
@@ -52,7 +53,8 @@ def test_every_moment_is_told_in_plain_connected_english(all_accounts, all_conte
         assert validate(story, a, plan, all_contexts[mid]) == [], mid
         for b in story.beats:
             for text in (b.text, b.fan):
-                assert "effect" not in text and "_" not in text and "+0." not in text  # no template fragments
+                assert "effect" not in text and "_" not in text  # no template fragments ("effect +0.015")
+                assert not re.search(r"(about|roughly|nearly|most valuable)", text)  # exact, not vague
                 words = text.lower().replace(",", "").replace(".", "").split()
                 assert all(words.count(w) <= 2 for w in ("space",)), text  # no "space ... space ... space"
             assert not any(ch.isdigit() for ch in b.fan)
@@ -64,10 +66,19 @@ def test_the_hero_story_points_at_the_flaw_through_its_link(hero, hero_ctx, hero
     assert "Ferraro runs straight past Jordan Novak" in flaw.fan and "the middle of the box" in flaw.fan
     context = story.beats[_beat(hero_plan, "context")]
     assert context.fan == "Northbridge's back line is standing much higher than usual."
-    assert "16 m from their goal here, against a match norm of about 9 m" in context.text
+    assert "16.3 m from their own goal line here, against a match median of 9.2 m over 12 defending spells" in         context.text
     outcome = story.beats[_beat(hero_plan, "outcome")]  # the fan's last word explains why it was a chance
     assert outcome.fan.startswith("A goal that didn't happen: Ferraro had a good chance from the middle of the box")
     assert "it came from the space Novak gave up" in outcome.fan
+
+
+def test_the_analyst_register_shows_its_ranking_exactly(hero, hero_ctx, hero_plan):
+    story = compose(hero, hero_plan, hero_ctx)
+    first = story.beats[0].text
+    assert first.endswith("VAEP +0.087: the largest of the 8 facts that built the chance, 58% of the 0.152 xG chance "
+                          "(next: +0.037).")
+    cf = story.beats[-1].text
+    assert "worth 0.169 against 0.097 for the pass to Ferraro, with a 77% chance of arriving" in cf
 
 
 def test_a_goal_is_told_from_the_scoring_side(all_accounts, all_contexts):
@@ -87,6 +98,12 @@ def test_critic_catches_planted_hallucinations(hero, hero_ctx, hero_plan):
         "an invented player": (1, "text", "Smith keeps the move going with a pass.", "'Smith'"),
         "an invented number": (0, "text", "Sam Adeyemi's pass is worth 0.42 of the chance.", "0.42"),
         "a player from another beat": (1, "fan", "Drew Brandt passes to Novak.", "who is not in this beat's facts"),
+        "a goal that never was": (_beat(hero_plan, "lead"), "fan", "Ferraro misses, and the goal is gone.",
+                                  "frames it as a goal"),
+        "a vague magnitude": (0, "text", "Sam Adeyemi's pass is worth about half the chance.", "vague"),
+        "a bare assertion": (0, "text", "Sam Adeyemi's pass is the most valuable action.", "vague or asserted"),
+        "a flipped team": (0, "text", "Northbridge's Sam Adeyemi plays the pass.", "puts Sam Adeyemi on Northbridge"),
+        "an invented share": (0, "text", "Sam Adeyemi's pass: 64% of the chance.", "64%"),
         "an uncomputed link": (1, "fan", "Brandt's pass drags Novak out of position.", "asserts a causal link"),
         "a scoring claim": (_beat(hero_plan, "lead"), "fan", "Ferraro scores.", "says the chance was scored"),
         "numbers in the fan register": (0, "fan", "Sam Adeyemi's pass is worth 15% of the chance.", "fan register"),
@@ -162,7 +179,7 @@ class FakeStoryteller:
 def test_foundry_telling_is_checked_and_cites_the_tool_records(hero, hero_ctx, hero_plan, tmp_path):
     fake = FakeStoryteller(_good(hero, hero_plan, hero_ctx))
     n = narrate(hero, context=hero_ctx, plan=hero_plan, renderer=fake, cache_dir=tmp_path)
-    assert (n.source, n.attempts, n.model) == ("foundry", 1, "test-model@prompt-v2")
+    assert (n.source, n.attempts, n.model) == ("foundry", 1, "test-model@prompt-v3")
     assert n.headline.startswith("In short: ")
     (material, feedback), = fake.calls
     assert material == brief(hero, hero_plan, hero_ctx) and feedback == []

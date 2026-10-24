@@ -29,7 +29,7 @@ from replay_room.contracts.causal_account import CausalAccount, Contribution, Li
 from replay_room.contracts.context import ContextFact, MatchContext
 from replay_room.contracts.match import MatchMeta
 from replay_room.contracts.refs import EventRef, FrameRef
-from replay_room.explain.compose import base_action, chance_band, noun
+from replay_room.explain.compose import base_action, chance_band, noun, ranked_phrase
 from replay_room.render.display import match_clock, value_unit
 
 
@@ -144,6 +144,8 @@ class Prover:
                 statement = (f"{who}'s {action} {verb} {self.T}'s chance of scoring by {abs(c.effect):.3f} "
                              f"({unit}).")
                 plain = f"{who}'s {action}: {self._boost(c)}."
+        if c.kind != "chance_denied":  # the rank and share, exactly, as the Storyteller states them
+            statement = f"{statement[:-1]}: {ranked_phrase(self.a, c, with_value=False)}"
         measured = {"metric": unit, "value": round(c.effect, 6), "statement": statement, "plain": plain,
                     "magnitude": round(abs(c.effect) / max(abs(x.effect) for x in self.a.contributions), 3)}
         return {"players": players, "frames": frames, "events": events, "measured": [measured],

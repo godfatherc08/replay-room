@@ -27,7 +27,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-PROMPT_VERSION = "2"
+PROMPT_VERSION = "3"
 DEFAULT_TEMPERATURE = 0.4
 
 SYSTEM_PROMPT = """\
@@ -51,6 +51,13 @@ Rules, all mandatory:
    as a title, then a subtitle, then a gloss; say it once, well.
 6. If outcome.scored is false, never say or imply the shot went in.
 7. The "draft" of each beat is a correct telling. Improve its language; do not add to its facts.
+8. Exact, not vague (analyst register): give the number and its comparison exactly as the draft does
+   ("VAEP +0.077: the largest of the 5 facts that built the chance, 70% of the 0.110 xG chance").
+   Never "about", "roughly", "nearly", "most valuable", "biggest": show the ranked values instead.
+9. Frame by the outcome: if outcome.scored is false, never write "the goal" or "a goal" (except
+   "a goal that didn't happen"); say "the chance".
+10. Names and teams verbatim: every player belongs to the team the brief gives; never move a player
+   to the other team and never merge two players' names.
 Return only the JSON object required by the schema.
 """
 

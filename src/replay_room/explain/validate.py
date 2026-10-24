@@ -22,7 +22,15 @@ half). For the headlines and every beat, in both registers:
   computed link. Elsewhere the facts stand side by side, unconnected;
 * **outcome**: if the terminal action did not score, nothing says it did
   (``SCORING_WORDS``, unless negated within a few words);
-* **fan register**: no digits and no metric jargon (``JARGON``).
+* **fan register**: no digits and no metric jargon (``JARGON``);
+* **exactness** (analyst register): no vague magnitude (``VAGUE``: "about",
+  "roughly", "nearly", "a big chunk"): the number and its comparison instead.
+  A share of the chance ("70% of the 0.110 xG chance") must equal a
+  contribution's |effect| over V; a count ("the move's 5 facts") the account's;
+* **framing**: a moment that did not score is never called "the goal" (only "a
+  goal that didn't happen", a goal kick, or a distance from goal);
+* **teams**: a player is never put on the other team ("Northbridge's Alex
+  Larsen" when the account has Alex Larsen at Eastport).
 """
 
 from __future__ import annotations
@@ -53,7 +61,7 @@ ball chance shot pass passes cross run runs space pressure movement defending de
 attacking attackers defence defense keeper goalkeeper save block miss header move build build-up turnover
 headline overall ultimately crucially decisively key credit blame value threat effect goal
 was were is are be been being had has have did do does could would should might may must can
-denied prevented realized realised scored missed lost won gave got made kept left let set put rated
+denied prevented realized realised scored missed lost won gave got made kept left let set put rated pitch
 """.split())
 SCORING_WORDS = re.compile(
     r"\b(scored|scores|netted|nets|converted|converts|finish(?:ed|es)? (?:it )?off|"
@@ -64,6 +72,12 @@ LINK_WORDS = re.compile(
     r"\b(drag(?:s|ged|ging)?|pull(?:s|ed|ing)? \w+ (?:out|away|across)|dr[ae]w(?:s)? \w+ (?:out|away|across)|"
     r"takes? \w+ away|took \w+ away|(?:runs?|ran) (?:straight |right )?past|step(?:s|ped)? away|vacat\w+|"
     r"open(?:s|ed|ing)(?: up)?|left the space|because|caused?|so that|leaving)\b", re.IGNORECASE)
+VAGUE = re.compile(r"\b(about|roughly|around|nearly|almost|approximately|a big chunk|a fair bit|a good deal|"
+                   r"most valuable|biggest|smallest)\b", re.IGNORECASE)
+# realized-goal wording; allowed in a moment that did not score only as "a goal that didn't happen", "goal kick",
+# "goal line", or a distance ("from their goal")
+GOAL_WORD = re.compile(r"(?<!from )(?<!from their )(?<!from the )(?<!own )\b(the|a|their|his|her|its) goal\b"
+                       r"(?! that didn't happen| kick| line)|\bmakes? the goal\b|^Goal\b", re.IGNORECASE)
 JARGON = re.compile(r"\b(xG|xT|VAEP|pitch control|expected threat|expected goals|probability|effect|metric)\b",
                     re.IGNORECASE)
 PLAYER_ID = re.compile(r"\b[A-Z]{2,4}-\d{1,3}\b")
@@ -97,18 +111,24 @@ class Grounds:
         self.floats = [abs(v) for v in probs + measured]
         self.integers = {p.shirt_number for p in a.participants if p.shirt_number is not None}
         self.integers |= {round(abs(v)) for v in measured if abs(v) >= 1}
+        self.integers |= {len(a.contributions), sum(c.kind != "chance_denied" for c in a.contributions)}
+        self.integers |= {f.sample_size for f in (context.facts if context else ())}
+        # shares of the chance a text may state as a percent: |effect| / V, for every fact
+        self.shares = [abs(c.effect) / a.outcome.value for c in a.contributions] if a.outcome.value > 0 else []
         self.team_words = {w for t in a.teams for w in t.name.split()} | {t.team_id for t in a.teams}
         self.names = {p.player_id: p.name for p in a.participants}
+        self.team_of = {p.player_id: p.team_id for p in a.participants}
+        self.team_names = {t.team_id: t.name for t in a.teams}
 
 
-def number_ok(token: str, floats: list[float], integers: set[int]) -> bool:
+def number_ok(token: str, floats: list[float], integers: set[int], shares: list[float] = ()) -> bool:
     percent = token.endswith("%")
     digits = token.rstrip("%")
     value = float(digits)
     decimals = len(digits.split(".")[1]) if "." in digits else 0
     half = 0.5 * 10 ** -decimals + 1e-9
     if percent:
-        return any(abs(value - 100 * v) <= half for v in floats if v <= 1)
+        return any(abs(value - 100 * v) <= half for v in [*(v for v in floats if v <= 1), *shares])
     if decimals == 0 and int(value) in integers:
         return True
     if decimals == 0 or (value < 1 and decimals < 2):
@@ -124,7 +144,7 @@ def check_text(text: str, grounds: Grounds, where: str, players: set[str], *, fa
             errors.append(f"{where}: names player {pid}, who is not in this beat's facts")
     scrubbed = PLAYER_ID.sub(" ", text)
     for token in NUMBER.findall(scrubbed):
-        if not number_ok(token, grounds.floats, grounds.integers):
+        if not number_ok(token, grounds.floats, grounds.integers, grounds.shares):
             errors.append(f"{where}: states {token}, which is not a number the tools computed")
     allowed = {w.strip("'’") for pid in players for w in re.split(r"[\s-]+", grounds.names.get(pid, ""))}
     allowed |= grounds.team_words | ALLOWED_TERMS
@@ -143,6 +163,18 @@ def check_text(text: str, grounds: Grounds, where: str, players: set[str], *, fa
             if not NEGATION.search(before):
                 errors.append(f"{where}: says the chance was scored, but the outcome is no goal")
                 break
+    if not grounds.account.outcome.scored and (m := GOAL_WORD.search(text)):
+        errors.append(f"{where}: {m.group(0)!r} frames it as a goal, but the outcome is no goal")
+    if not fan and (m := VAGUE.search(text)):
+        errors.append(f"{where}: {m.group(0)!r} is vague or asserted: state the number and its comparison")
+    for pid, name in grounds.names.items():
+        for tid, team in grounds.team_names.items():
+            if tid == grounds.team_of.get(pid):
+                continue
+            for t in {team, team.split()[0]}:
+                if re.search(rf"\b{re.escape(t)}'s {re.escape(name)}\b|\b{re.escape(name)} \({re.escape(team)}\)", text):
+                    errors.append(f"{where}: puts {name} on {team}; the account has them at "
+                                  f"{grounds.team_names[grounds.team_of[pid]]}")
     if not link and (m := LINK_WORDS.search(text)):
         errors.append(f"{where}: {m.group(0)!r} asserts a causal link, but this beat carries no computed link")
     if fan:
