@@ -29,7 +29,7 @@ describe("overlays", () => {
 
   it("a story step draws only its own fact; the counterfactual waits for its own beat", () => {
     const b = fixture();
-    const assist = b.story.find((s) => s.kind === "contribution" && s.contribution_id === "a161")!;
+    const assist = b.story.find((s) => s.kind === "build_up" && s.contribution_id === "a161")!;
     expect(stepOverlays(b, assist)).toEqual(contributionOverlays(b, "a161"));
     expect(stepOverlays(b, b.story.find((s) => s.kind === "outcome")!)).toEqual(outcomeOverlays(b));
   });

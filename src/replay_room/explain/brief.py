@@ -1,81 +1,78 @@
-"""The narration brief: the account, reshaped for a renderer to read. Nothing is added.
+"""The story brief: a framing plan with every beat's records resolved, for a model Storyteller to read.
 
-Everything in the brief is a field of the ``CausalAccount`` (names come from its
-``participants`` and ``teams``). Refs are flattened to strings
-(``event:<action_id>`` / ``frame:<frame_id>``) so a renderer can copy one into
-each sentence; ``order`` is the sentence order every narration must follow:
-the headline first, then the remaining contributions in rank order.
+Nothing is added: each beat carries the fields of the records it points at
+(names from the account's participants and teams), the players it may name,
+and the numbers it may weave in. The deterministic composer's telling is
+included as a reference draft the model may improve on but not go beyond.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from replay_room.contracts.causal_account import CausalAccount
+from replay_room.contracts.causal_account import CausalAccount, Contribution
+from replay_room.contracts.context import MatchContext
+from replay_room.contracts.plan import FramingPlan
 from replay_room.contracts.refs import EventRef, FrameRef
+from replay_room.explain.compose import chance_band, compose
+from replay_room.framing.facts import Facts
 
 
 def ref_key(ref: EventRef | FrameRef) -> str:
     return f"event:{ref.action_id}" if ref.kind == "event" else f"frame:{ref.frame_id}"
 
 
-def narration_order(account: CausalAccount) -> list[str]:
-    head = account.headline_contribution_id
-    return [head] + [c.contribution_id for c in account.contributions if c.contribution_id != head]
+def _contribution(c: Contribution, names: dict[str, str], teams: dict[str, str]) -> dict[str, Any]:
+    return {"contribution_id": c.contribution_id, "role": c.role, "kind": c.kind, "label": c.action or c.signal,
+            "player": names.get(c.player_id, c.player_id), "team": teams[c.team_id],
+            "effect": round(c.effect, 3), "metrics": {k: round(v, 3) for k, v in c.metrics.items()},
+            "named_players": sorted({names.get(p, p) for r in c.evidence if r.kind == "frame"
+                                     for p in r.player_ids} - {names.get(c.player_id)})}
 
 
-def brief(account: CausalAccount) -> dict[str, Any]:
+def brief(account: CausalAccount, plan: FramingPlan, context: MatchContext | None = None) -> dict[str, Any]:
+    facts = Facts(account, context)
     names = {p.player_id: p.name for p in account.participants}
     teams = {t.team_id: t.name for t in account.teams}
-    out, m = account.outcome, account.moment
-    by_id = {c.contribution_id: c for c in account.contributions}
-    return {
-        "moment": {"type": m.type, "period": m.period_id,
-                   "attacking_team": teams[out.beneficiary_team_id], "defending_team": teams[out.conceding_team_id]},
-        "outcome": {
-            "framing": "realized" if out.realized else "prevented",
-            "scored": out.scored,
-            "value": round(out.value, 3),
-            "value_name": out.value_source,
-            "ref": ref_key(out.ref),
-        },
-        "headline_contribution_id": account.headline_contribution_id,
-        "order": narration_order(account),
-        "contributions": [
-            {
-                "contribution_id": c.contribution_id,
-                "rank": c.rank,
-                "headline": c.contribution_id == account.headline_contribution_id,
-                "track": c.track,
-                "kind": c.kind,
-                "role": c.role,
-                "label": c.action or c.signal,
-                "player_id": c.player_id,
-                "player_name": names.get(c.player_id, c.player_id),
-                "team": teams[c.team_id],
-                "effect": round(c.effect, 3),
-                "metrics": {k: round(v, 3) for k, v in c.metrics.items()},
-                "refs": [ref_key(r) for r in c.evidence],
-                "named_players": sorted({p for r in c.evidence if r.kind == "frame" for p in r.player_ids}
-                                        - {c.player_id}),
-            }
-            for c in (by_id[i] for i in narration_order(account))
-        ],
-        "counterfactuals": [
-            {
-                "contribution_id": cf.contribution_id,
-                "chosen": cf.chosen,
+    out = account.outcome
+    draft = compose(account, plan, context)
+    beats = []
+    for b, told in zip(plan.beats, draft.beats):
+        item: dict[str, Any] = {"beat_id": b.beat_id, "kind": b.kind, "emphasis": b.emphasis,
+                                "may_name": sorted(names[p] for p in facts.players(b, plan.lead_contribution_id,
+                                                                                    plan.flaw_contribution_id)),
+                                "carries_a_computed_link": b.link_id is not None,
+                                "draft": {"text": told.text, "fan": told.fan}}
+        if b.contribution_id and b.kind != "counterfactual":
+            item["fact"] = _contribution(facts.contribution(b.contribution_id), names, teams)
+        if b.link_id:
+            k = facts.link(b.link_id)
+            item["link"] = {"kind": k.kind, "defender": names[k.defender_id],
+                            "marked": names.get(k.marked_player_id) if k.marked_player_id else None,
+                            "runner": names.get(k.runner_id) if k.runner_id else None, "zone": k.zone,
+                            "used_by": _contribution(used, names, teams) if (used := facts.enabled_by(k)) else None,
+                            "metrics": {key: round(v, 1) for key, v in k.metrics.items()}}
+        if b.context_fact_id:
+            f = facts.context_fact(b.context_fact_id)
+            item["context"] = {"kind": f.kind, "team": teams[f.team_id], "unit": f.unit, "baseline": f.baseline,
+                               "here": f.here, "spread": f.spread, "direction": f.direction,
+                               "sample_size": f.sample_size, "confidence": f.confidence, "metrics": f.metrics}
+        if b.kind == "counterfactual":
+            cf = facts.counterfactual(b.contribution_id)
+            item["counterfactual"] = {
+                "chooser": names[facts.contribution(cf.contribution_id).player_id], "chosen": cf.chosen,
                 "chosen_value": round(cf.chosen_value, 3),
-                "better_options": [
-                    {"description": a.description,
-                     "target_player_name": names.get(a.target_player_id) if a.target_player_id else None,
-                     "value": round(a.value, 3),
-                     "completion_prob": None if a.completion_prob is None else round(a.completion_prob, 2)}
-                    for a in cf.alternatives
-                ],
-            }
-            for cf in account.counterfactuals
-        ],
-        "participants": [{"player_id": p.player_id, "name": p.name, "team": teams[p.team_id]}
-                         for p in account.participants],
+                "better_options": [{"description": a.description, "value": round(a.value, 3),
+                                    "target": names.get(a.target_player_id) if a.target_player_id else None,
+                                    "completion_prob": None if a.completion_prob is None else round(a.completion_prob, 2)}
+                                   for a in cf.alternatives]}
+        beats.append(item)
+    return {
+        "moment": {"type": account.moment.type, "attacking_team": teams[out.beneficiary_team_id],
+                   "defending_team": teams[out.conceding_team_id]},
+        "outcome": {"framing": "realized" if out.realized else "prevented", "scored": out.scored,
+                    "value": round(out.value, 3), "band": chance_band(out.value), "zone": out.zone,
+                    "shooter": names.get(facts.scorer_id)},
+        "headline_draft": {"text": draft.headline, "fan": draft.headline_fan},
+        "beats": beats,
     }

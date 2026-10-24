@@ -16,7 +16,7 @@ nothing that decides anything:
 * ``goalkeepers``: the goalkeepers' player ids (drawn in a distinct colour);
 * ``display``: per contribution, title / subtitle / unit / time / match clock
   (``render.display``), all read off the account;
-* ``narration``: the Build 6 narration of this account (validated), or null;
+* ``narration``: the validated telling of the moment (Storyteller + Critic, narration v2);
 * ``match_moments``: every moment exported with this one (for the timeline);
 * ``key_spot``: where the key event happened and the radius scale Build 4's
   off-ball track measured space at (``attribution.off_ball.SPOT_SIGMA``);
@@ -24,12 +24,13 @@ nothing that decides anything:
   and its |effect| normalized within the moment (``render.display.meaning``);
 * ``outcome_display``: the outcome's value as a percent, a qualitative band and
   the result line;
-* ``story``: the order Story Mode plays the account in: the other
-  contributions in time order, then the headline, then the outcome, then each
-  counterfactual. Each step carries its frame, one caption (the
-  contribution's narration sentence; outcome / counterfactual captions are
-  assembled from their fields) and ``plain``, the same idea without numbers
-  (name + gloss), for Fan mode when the caption quotes a metric;
+* ``story``: the order Story Mode plays the moment in: the beats of the
+  Analyst's framing plan, as told by the Storyteller and passed by the Critic.
+  Each step carries its beat (kind, emphasis, the ids it tells), the frame
+  the camera goes to, ``caption`` (the analyst register) and ``plain`` (the
+  fan register: no numbers, no jargon);
+* ``plan`` / ``context`` / ``editions``: the framing plan, the moment's match
+  context, and the Editor's editions (by register) when the agents made them;
 * ``teams[].kit``: display colours by side (the feed has none);
 * ``jumps``: one per contribution, in rank order, the frame the camera jumps
   to. An off-ball fact jumps to its first cited frame; an on-ball fact to the
@@ -52,6 +53,8 @@ import numpy as np
 from replay_room.attribution.off_ball import SPOT_SIGMA
 from replay_room.attribution.store import ACCOUNTS_DIR
 from replay_room.contracts.causal_account import CausalAccount
+from replay_room.contracts.context import MatchContext
+from replay_room.contracts.plan import FramingPlan
 from replay_room.contracts.pitch import BALL_ID, PITCH_LENGTH, PITCH_WIDTH
 from replay_room.explain.schema import Narration
 from replay_room.ingest.loader import Match
@@ -59,7 +62,7 @@ from replay_room.render.display import (KITS, contribution_display, match_clock,
                                         outcome_display, score_before)
 from replay_room.metrics.pass_value import frame_ids_at
 
-BUNDLE_VERSION = "3"
+BUNDLE_VERSION = "4"
 
 
 def _r(v: float) -> float | None:
@@ -76,8 +79,11 @@ def moment_entry(account: CausalAccount, match: Match) -> dict[str, Any]:
             "realized": account.outcome.realized, "match_clock": match_clock(match.meta, m.period_id, m.t_event)}
 
 
-def export_moment(account: CausalAccount, match: Match, narration: Narration | None = None,
-                  moments: Iterable[CausalAccount] = ()) -> dict[str, Any]:
+def export_moment(account: CausalAccount, match: Match, narration: Narration, plan: FramingPlan,
+                  moments: Iterable[CausalAccount] = (), context: MatchContext | None = None,
+                  editions: dict[str, Any] | None = None) -> dict[str, Any]:
+    if (narration.moment_id, plan.moment_id) != (account.moment.moment_id, account.moment.moment_id):
+        raise ValueError("narration and plan must be for this moment")
     m = account.moment
     w = m.window
     window = match.tracking[(match.tracking["frame_id"] >= w.frame_start) & (match.tracking["frame_id"] <= w.frame_end)]
@@ -101,6 +107,8 @@ def export_moment(account: CausalAccount, match: Match, narration: Narration | N
 
     by_id = match.actions.set_index("action_id", drop=False)
     cited = {r.action_id for c in account.contributions for r in c.evidence if r.kind == "event"}
+    cited |= {link.enabled.action_id for link in account.links if link.enabled is not None}
+    cited |= {r.action_id for f in (context.facts if context else ()) for r in f.evidence if r.kind == "event"}
     wanted = set(m.chain_action_ids) | cited | {m.outcome_ref.action_id}
     if m.turnover_event_ref is not None:
         wanted.add(m.turnover_event_ref.action_id)
@@ -160,7 +168,11 @@ def export_moment(account: CausalAccount, match: Match, narration: Narration | N
         "goalkeepers": sorted(p.player_id for t in (meta.home_team, meta.away_team) for p in t.players
                               if p.position == "GK"),
         "display": contribution_display(account, meta),
-        "narration": narration.model_dump(mode="json") if narration is not None else None,
+        "narration": narration.model_dump(mode="json"),
+        "plan": plan.model_dump(mode="json"),
+        "context": context.model_dump(mode="json") if context is not None else None,
+        "editions": {k: (e.model_dump(mode="json") if hasattr(e, "model_dump") else e)
+                     for k, e in (editions or {}).items()},
         "match_moments": sorted((moment_entry(a, match) for a in moments),
                                 key=lambda e: (e["period_id"], e["t_event"], e["moment_id"])),
         "key_spot": {"x": _r(by_id.at[m.key_event_ref.action_id, "start_x"]),
@@ -172,56 +184,56 @@ def export_moment(account: CausalAccount, match: Match, narration: Narration | N
     }
 
 
-def story_steps(account: CausalAccount, narration: Narration | None, jumps: list[dict[str, Any]],
-                event_frame: dict[int, tuple[int, bool]]) -> list[dict[str, Any]]:
-    """The order Story Mode reveals the account: build-up (time order) -> headline -> outcome -> counterfactuals."""
+def beat_frame(beat: dict[str, Any], account: CausalAccount, jumps: list[dict[str, Any]],
+               event_frame: dict[int, tuple[int, bool]]) -> int:
+    """The window frame a beat shows: its contribution's jump, a link's end frame (the gap at its widest), a
+    context fact's last "here" frame, the outcome's event, a counterfactual's decision frame."""
     frame_of = {j["contribution_id"]: j["frame_id"] for j in jumps}
-    said = {s.contribution_id: s.text for s in narration.sentences} if narration is not None else {}
-    head = account.headline_contribution_id
-    names = {p.player_id: p.name for p in account.participants}
-    glosses = {m["contribution_id"]: m["gloss"] for m in meaning(account)}
+    links = {k.link_id: k for k in account.links}
+    if beat["kind"] == "counterfactual":
+        return next(cf.decision_frame.frame_id for cf in account.counterfactuals
+                    if cf.contribution_id == beat["contribution_id"])
+    if beat.get("link_id"):
+        return links[beat["link_id"]].evidence[-1].frame_id
+    if beat["kind"] == "outcome":
+        return event_frame[account.outcome.ref.action_id][0]
+    if beat["kind"] == "context":
+        frames = [r["frame_id"] for r in beat["refs"] if r["kind"] == "frame"]
+        return frames[-1] if frames else event_frame[beat["refs"][0]["action_id"]][0]
+    return frame_of[beat["contribution_id"]]
 
-    def when(c):
-        r = c.evidence[0]
-        return r.time_seconds if r.kind == "event" else r.timestamp
 
-    rest = sorted((c for c in account.contributions if c.contribution_id != head), key=lambda c: (when(c), c.rank))
-    steps = [{"kind": "contribution", "contribution_id": c.contribution_id, "frame_id": frame_of[c.contribution_id],
-              "caption": said.get(c.contribution_id),
-              "plain": f"{names.get(c.player_id, c.player_id)} — {glosses[c.contribution_id]}."}
-             for c in [*rest, account.headline]]
-    o = account.outcome
-    team = next((t.name for t in account.teams if t.team_id == o.beneficiary_team_id), o.beneficiary_team_id)
-    caption = (f"Goal for {team}." if o.scored else "The shot doesn't go in." if o.realized
-               else f"A goal that didn't happen for {team}.")
-    steps.append({"kind": "outcome", "contribution_id": None, "frame_id": event_frame[o.ref.action_id][0],
-                  "caption": caption, "plain": caption})
-    for cf in account.counterfactuals:
-        best = cf.alternatives[0]
-        caption = (f"The better option: {name_ids(best.description, account)}, "
-                   f"instead of the {name_ids(cf.chosen, account)}.")
-        steps.append({"kind": "counterfactual", "contribution_id": cf.contribution_id,
-                      "frame_id": cf.decision_frame.frame_id, "caption": caption, "plain": caption})
-    return [{"index": i, **s} for i, s in enumerate(steps)]
+def story_steps(account: CausalAccount, narration: Narration, jumps: list[dict[str, Any]],
+                event_frame: dict[int, tuple[int, bool]]) -> list[dict[str, Any]]:
+    """Story Mode's steps: the told beats, in the plan's order, each with its frame and both registers."""
+    steps = []
+    for b in narration.model_dump(mode="json")["beats"]:
+        steps.append({"index": b["index"], "kind": b["kind"], "emphasis": b["emphasis"], "beat_id": b["beat_id"],
+                      "contribution_id": b["contribution_id"], "link_id": b["link_id"],
+                      "context_fact_id": b["context_fact_id"],
+                      "frame_id": beat_frame(b, account, jumps, event_frame),
+                      "caption": b["text"], "plain": b["fan"]})
+    return steps
 
 
 def dumps(bundle: dict[str, Any]) -> str:
     return json.dumps(bundle, separators=(",", ":"), ensure_ascii=False) + "\n"
 
 
-def write_bundles(accounts: Iterable[CausalAccount], match: Match, root: str | Path = ACCOUNTS_DIR,
-                  narrations: dict[str, Narration] | None = None) -> list[Path]:
+def write_bundles(accounts: Iterable[CausalAccount], match: Match, told: dict[str, dict[str, Any]],
+                  root: str | Path = ACCOUNTS_DIR) -> list[Path]:
     """One bundle per account next to it, plus ``<root>/index.json`` listing every bundle under root.
 
-    ``narrations``: moment_id -> its validated narration (omitted moments get none).
+    ``told``: moment_id -> {"narration", "plan", "context", "editions"} (the agents' output for it).
     """
     accounts = list(accounts)
-    narrations = narrations or {}
     paths = []
     for account in accounts:
         path = bundle_path(account, root)
         path.parent.mkdir(parents=True, exist_ok=True)
-        bundle = export_moment(account, match, narrations.get(account.moment.moment_id), accounts)
+        t = told[account.moment.moment_id]
+        bundle = export_moment(account, match, t["narration"], t["plan"], accounts, t.get("context"),
+                               t.get("editions"))
         path.write_text(dumps(bundle), encoding="utf-8", newline="\n")
         paths.append(path)
     write_index(root)

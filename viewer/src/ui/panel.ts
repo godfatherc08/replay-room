@@ -4,7 +4,7 @@
 // In Story the stage's step card is the hero, so the chain starts collapsed here; in Explore it is open and
 // is the way in. Every word and number is a field of the bundle; a slot it has nothing for is left out.
 
-import { decisionView, evidenceRows, momentHeader, outcomeView, stepCaption, summary } from "../account";
+import { decisionView, evidenceRows, momentHeader, outcomeView, summary } from "../account";
 import type { Viewer } from "../controller";
 import { button, el, icon, meter, radial } from "./dom";
 import type { UIState } from "./state";
@@ -21,7 +21,7 @@ export function buildPanel(root: HTMLElement, viewer: Viewer, state: UIState, on
   let rows = new Map<string, HTMLElement>();
 
   const moment = (): HTMLElement => {
-    const h = momentHeader(bundle);
+    const h = momentHeader(bundle, state.mode);
     const o = outcomeView(bundle, state.mode);
     const box = el("section", "rr-block rr-moment");
     const top = el("div", "rr-card-head");
@@ -98,14 +98,12 @@ export function buildPanel(root: HTMLElement, viewer: Viewer, state: UIState, on
   };
 
   const story = (): HTMLElement | null => {
-    const s = summary(bundle);
+    const s = summary(bundle, state.mode);
     if (!s) return null;
     const box = el("details", "rr-block rr-summary");
     const sum = el("summary", "rr-section-title", "Summary");
     const list = el("ol", "rr-summary-list");
-    for (const step of bundle.story.filter((x) => x.kind === "contribution")) {
-      list.append(el("li", undefined, stepCaption(step, state.mode)));
-    }
+    for (const line of s.lines) list.append(el("li", undefined, line));
     box.append(sum, list, el("div", "rr-micro rr-source", s.source));
     return box;
   };

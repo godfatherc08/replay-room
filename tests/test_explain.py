@@ -1,157 +1,127 @@
-import copy
 import io
 import json
 import os
-import warnings
-from types import SimpleNamespace
 
 import pytest
 
-from replay_room.attribution.engine import attribute_match
 from replay_room.explain import narrate, validate
 from replay_room.explain.__main__ import main
-from replay_room.explain.brief import brief, narration_order
-from replay_room.explain.foundry import SYSTEM_PROMPT, FoundryConfig, FoundryRenderer
-from replay_room.explain.narrate import MAX_ATTEMPTS
-from replay_room.explain.schema import MODEL_OUTPUT_SCHEMA, ModelNarration, Narration
-from replay_room.explain.template import render_template
+from replay_room.explain.brief import brief
+from replay_room.explain.compose import compose
+from replay_room.explain.foundry import SYSTEM_PROMPT, FoundryConfig, FoundryStoryteller
+from replay_room.explain.narrate import MAX_ATTEMPTS, UngroundedNarration, as_story
+from replay_room.explain.schema import MODEL_OUTPUT_SCHEMA, Narration, StoryOutput
+from replay_room.framing import rules_plan
 
-
-@pytest.fixture(scope="module")
-def accounts(match):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", FutureWarning)
-        return {a.moment.moment_id: a for a in attribute_match(match)}
+HERO = "SYN-0007-big_chance_saved-3"
 
 
 @pytest.fixture
-def hero(accounts):
-    return accounts["SYN-0007-big_chance_saved-3"]
+def hero(all_accounts):
+    return all_accounts[HERO]
 
 
-def _good(account) -> dict:
-    """A model-style narration that is grounded (built from the template, reworded)."""
-    n = render_template(account).model_dump(mode="json")
-    n["headline_text"] = "In short: " + n["headline_text"]
-    return n
+@pytest.fixture
+def hero_ctx(all_contexts):
+    return all_contexts[HERO]
 
 
-class FakeClient:
-    """Stands in for the Foundry OpenAI client: returns queued outputs, records requests."""
-
-    def __init__(self, outputs):
-        self.outputs = list(outputs)
-        self.requests = []
-        self.responses = SimpleNamespace(create=self._create)
-
-    def _create(self, **kwargs):
-        self.requests.append(kwargs)
-        out = self.outputs.pop(0)
-        if isinstance(out, Exception):
-            raise out
-        return SimpleNamespace(output_text=json.dumps(out), status="completed")
+@pytest.fixture
+def hero_plan(hero, hero_ctx):
+    return rules_plan(hero, hero_ctx)
 
 
-def _renderer(*outputs, temperature=0.2):
-    client = FakeClient(outputs)
-    return FoundryRenderer(FoundryConfig("https://example.services.ai.azure.com/api/projects/p", "test-model",
-                                         temperature), client), client
+def _good(account, plan, context) -> dict:
+    """A model-style telling that is grounded (the composer's, reworded)."""
+    s = compose(account, plan, context).model_dump(mode="json")
+    s["headline"] = "In short: " + s["headline"]
+    return s
 
 
-# --------------------------------------------------------------------------- the gate
+def _beat(plan, kind):
+    return next(i for i, b in enumerate(plan.beats) if b.kind == kind)
 
 
-def test_validator_catches_planted_hallucinations(hero):
-    good = _good(hero)
-    assert validate(good, hero) == []
-    planted = {
-        "ref not in the account": ("ref", "event:9999", "cites 'event:9999'"),
-        "ref of another contribution": ("ref", "frame:2416", "cites 'frame:2416'"),
-        "invented player id": ("text", "EPA-99 played it through.", "EPA-99, who is not in the account"),
-        "invented player name": ("text", "Marcus Rashford played it through.", "names 'Marcus'"),
-        "invented team": ("text", "Arsenal never recovered.", "names 'Arsenal'"),
-        "invented number": ("text", "It was worth 0.42.", "states 0.42"),
-        "wrong metric": ("metric", {"name": "effect", "value": 0.2}, "effect=0.2"),
-        "unknown metric": ("metric", {"name": "speed_kmh", "value": 30.0}, "metric 'speed_kmh'"),
-        "goal that wasn't": ("text", "He scored from close range.", "says the chance was scored"),
-        "wrong role": ("role", "assist", "role 'assist'"),
+# --------------------------------------------------------------------------- the composer reads like language
+
+
+def test_every_moment_is_told_in_plain_connected_english(all_accounts, all_contexts):
+    for mid, a in all_accounts.items():
+        plan = rules_plan(a, all_contexts[mid])
+        story = compose(a, plan, all_contexts[mid])
+        assert validate(story, a, plan, all_contexts[mid]) == [], mid
+        for b in story.beats:
+            for text in (b.text, b.fan):
+                assert "effect" not in text and "_" not in text and "+0." not in text  # no template fragments
+                words = text.lower().replace(",", "").replace(".", "").split()
+                assert all(words.count(w) <= 2 for w in ("space",)), text  # no "space ... space ... space"
+            assert not any(ch.isdigit() for ch in b.fan)
+
+
+def test_the_hero_story_points_at_the_flaw_through_its_link(hero, hero_ctx, hero_plan):
+    story = compose(hero, hero_plan, hero_ctx)
+    flaw = story.beats[_beat(hero_plan, "flaw")]
+    assert "Ferraro runs straight past Jordan Novak" in flaw.fan and "the middle of the box" in flaw.fan
+    context = story.beats[_beat(hero_plan, "context")]
+    assert context.fan == "Northbridge's back line is standing much higher than usual."
+    assert "16 m from their goal here, against a match norm of about 9 m" in context.text
+    outcome = story.beats[_beat(hero_plan, "outcome")]  # the fan's last word explains why it was a chance
+    assert outcome.fan.startswith("A goal that didn't happen: Ferraro had a good chance from the middle of the box")
+    assert "it came from the space Novak gave up" in outcome.fan
+
+
+def test_a_goal_is_told_from_the_scoring_side(all_accounts, all_contexts):
+    a = all_accounts["SYN-0007-goal-3"]
+    story = compose(a, rules_plan(a, all_contexts["SYN-0007-goal-3"]), all_contexts["SYN-0007-goal-3"])
+    assert story.headline_fan == "Larsen's interception makes the goal for Eastport, after Hale's mistake."
+    assert "goalkick" not in story.headline and "goal kick" in " ".join(b.fan for b in story.beats)
+
+
+# --------------------------------------------------------------------------- the Critic's text rules
+
+
+def test_critic_catches_planted_hallucinations(hero, hero_ctx, hero_plan):
+    good = _good(hero, hero_plan, hero_ctx)
+    assert validate(good, hero, hero_plan, hero_ctx) == []
+    cases = {
+        "an invented player": (1, "text", "Smith keeps the move going with a pass.", "'Smith'"),
+        "an invented number": (0, "text", "Sam Adeyemi's pass is worth 0.42 of the chance.", "0.42"),
+        "a player from another beat": (1, "fan", "Drew Brandt passes to Novak.", "who is not in this beat's facts"),
+        "an uncomputed link": (1, "fan", "Brandt's pass drags Novak out of position.", "asserts a causal link"),
+        "a scoring claim": (_beat(hero_plan, "lead"), "fan", "Ferraro scores.", "says the chance was scored"),
+        "numbers in the fan register": (0, "fan", "Sam Adeyemi's pass is worth 15% of the chance.", "fan register"),
+        "jargon in the fan register": (0, "fan", "Sam Adeyemi's pass adds VAEP.", "jargon"),
     }
-    for name, (field, value, message) in planted.items():
-        bad = copy.deepcopy(good)
-        bad["sentences"][1][field] = value
-        errors = validate(bad, hero)
-        assert any(message in e for e in errors), (name, errors)
+    for name, (i, field, text, expected) in cases.items():
+        bad = json.loads(json.dumps(good))
+        bad["beats"][i][field] = text
+        errors = validate(bad, hero, hero_plan, hero_ctx)
+        assert any(expected in e for e in errors), (name, errors)
 
 
-def test_validator_checks_shape_and_order(hero):
-    good = _good(hero)
-    swapped = copy.deepcopy(good)
-    swapped["sentences"][0], swapped["sentences"][1] = swapped["sentences"][1], swapped["sentences"][0]
-    assert any("in that order" in e for e in validate(swapped, hero))
-    short = copy.deepcopy(good)
-    short["sentences"].pop()
-    assert any("in that order" in e for e in validate(short, hero))
-    assert any("narration schema" in e for e in validate({"headline_text": "x"}, hero))
-    bad_head = copy.deepcopy(good)
-    bad_head["headline_text"] = "Liverpool would have won it 3-1."
-    errors = validate(bad_head, hero)
-    assert any("headline" in e and "'Liverpool'" in e for e in errors) and any("states 3" in e for e in errors)
+def test_link_language_is_allowed_where_the_engine_computed_a_link(hero, hero_ctx, hero_plan):
+    good = _good(hero, hero_plan, hero_ctx)
+    i = _beat(hero_plan, "flaw")  # this flaw beat carries the computed run_past link
+    assert hero_plan.beats[i].link_id == "LNBR-05" and "runs straight past" in good["beats"][i]["text"]
+    assert validate(good, hero, hero_plan, hero_ctx) == []
 
 
-def test_scoring_language_on_a_chance_that_did_not_score(hero):
-    def errs(text):
-        return [e for e in validate({**_good(hero), "headline_text": text}, hero) if "scored" in e]
-    for claim in ("He scored from close range.", "It was converted.", "The shot went into the net."):
-        assert errs(claim), claim
-    for fine in ("The miss denied a scoring chance.", "The shot didn't go into the net.",
-                 "It was never scored.", "He failed to convert, and it was not netted."):
-        assert errs(fine) == [], fine
+def test_critic_checks_shape_and_order(hero, hero_ctx, hero_plan):
+    good = _good(hero, hero_plan, hero_ctx)
+    swapped = json.loads(json.dumps(good))
+    swapped["beats"][0], swapped["beats"][1] = swapped["beats"][1], swapped["beats"][0]
+    assert "in that order" in validate(swapped, hero, hero_plan, hero_ctx)[0]
+    assert "story schema" in validate({"headline": "x"}, hero, hero_plan, hero_ctx)[0]
 
 
-def test_numbers_match_at_the_precision_written(hero):
-    v = hero.outcome.value  # 0.152
-    for text in (f"worth {v:.3f}", f"worth {v:.2f}", f"worth {100 * v:.0f}%", f"worth {100 * v:.1f}%"):
-        assert validate({**_good(hero), "headline_text": text}, hero) == [], text
-    for text in ("worth 0", "worth 0.2", "worth 0.9", "worth 16%"):
-        assert validate({**_good(hero), "headline_text": text}, hero), text
-
-
-# --------------------------------------------------------------------------- the floor
-
-
-def test_template_is_always_grounded(accounts):
-    for a in accounts.values():
-        n = narrate(a, "template")
-        assert n.source == "template" and validate(render_template(a), a) == []
-        assert [s.contribution_id for s in n.sentences] == narration_order(a)
-        cited = {r for c in a.contributions for r in c.evidence}
-        assert all(s.ref in cited for s in n.sentences)
-
-
-def test_prevented_leads_with_what_stopped_it(accounts):
-    for a in accounts.values():
-        n = narrate(a, "template")
-        assert n.framing == ("realized" if a.outcome.realized else "prevented")
-        assert n.sentences[0].contribution_id == a.headline_contribution_id and n.sentences[0].headline
-        if not a.outcome.realized:
-            assert n.headline_text.startswith("A goal that didn't happen")
-            assert a.headline.kind == "chance_denied" and n.sentences[0].role == "prevention"
-    saved = narrate(accounts["SYN-0007-big_chance_saved-1"], "template")
-    assert "denied by" in saved.headline_text and "keeper save" in saved.headline_text
-
-
-def test_schema_refs_and_timestamps(hero):
-    n = narrate(hero, "template")
-    assert Narration.model_validate_json(n.model_dump_json()) == n
-    for s in n.sentences:
-        assert s.t == (s.ref.time_seconds if s.ref.kind == "event" else s.ref.timestamp)
-    cues = n.timed_overlay
-    assert sorted(c.sentence_index for c in cues) == list(range(len(n.sentences)))
-    assert [c.t_start for c in cues] == sorted(c.t_start for c in cues)
-    assert all(c.t_end > c.t_start for c in cues)
-    for c in cues:
-        s = n.sentences[c.sentence_index]
-        assert (c.frame_id is not None) == (s.ref.kind == "frame") and c.text == s.text
+def test_numbers_match_at_the_precision_written(hero, hero_ctx, hero_plan):
+    good = _good(hero, hero_plan, hero_ctx)
+    i = _beat(hero_plan, "outcome")
+    for text, ok in (("Rated 15% before the shot.", True), ("Rated 0.15 before the shot.", True),
+                     ("Rated 16% before the shot.", False), ("Rated 0.2 before the shot.", False)):
+        bad = json.loads(json.dumps(good))
+        bad["beats"][i]["text"] = text
+        assert (validate(bad, hero, hero_plan, hero_ctx) == []) is ok, text
 
 
 def test_model_output_schema_is_strict():
@@ -166,72 +136,97 @@ def test_model_output_schema_is_strict():
             for v in node:
                 walk(v)
     walk(MODEL_OUTPUT_SCHEMA)
+    assert set(MODEL_OUTPUT_SCHEMA["properties"]) == {"headline", "headline_fan", "beats"}
 
 
-# --------------------------------------------------------------------------- Foundry path (mocked)
+# --------------------------------------------------------------------------- Foundry Storyteller (mocked)
 
 
-def test_foundry_request_carries_only_the_account(hero, tmp_path):
-    renderer, client = _renderer(_good(hero))
-    n = narrate(hero, renderer=renderer, cache_dir=tmp_path)
-    assert (n.source, n.attempts, n.model) == ("foundry", 1, "test-model@prompt-v1")
-    assert n.headline_text.startswith("In short: ")
-    (req,) = client.requests
-    assert req["instructions"] == SYSTEM_PROMPT and req["model"] == "test-model" and req["temperature"] == 0.2
-    assert req["text"]["format"] == {"type": "json_schema", "name": "narration", "schema": MODEL_OUTPUT_SCHEMA,
-                                     "strict": True}
-    sent = json.loads(req["input"].split("ACCOUNT:\n", 1)[1])
-    assert sent == json.loads(json.dumps(brief(hero)))  # the brief, nothing else
+class FakeStoryteller:
+    """Stands in for the Foundry Storyteller: returns queued outputs, records the briefs and feedback."""
+
+    model = "test-model"
+
+    def __init__(self, *outputs):
+        self.outputs = list(outputs)
+        self.calls = []
+
+    def render(self, material, feedback=()):
+        self.calls.append((material, list(feedback)))
+        out = self.outputs.pop(0)
+        if isinstance(out, Exception):
+            raise out
+        return out
 
 
-def test_rejected_output_is_regenerated_with_feedback(hero, tmp_path):
-    bad = _good(hero)
-    bad["sentences"][2]["text"] = "Then Smith scored."
-    renderer, client = _renderer(bad, _good(hero))
-    n = narrate(hero, renderer=renderer, cache_dir=tmp_path)
+def test_foundry_telling_is_checked_and_cites_the_tool_records(hero, hero_ctx, hero_plan, tmp_path):
+    fake = FakeStoryteller(_good(hero, hero_plan, hero_ctx))
+    n = narrate(hero, context=hero_ctx, plan=hero_plan, renderer=fake, cache_dir=tmp_path)
+    assert (n.source, n.attempts, n.model) == ("foundry", 1, "test-model@prompt-v2")
+    assert n.headline.startswith("In short: ")
+    (material, feedback), = fake.calls
+    assert material == brief(hero, hero_plan, hero_ctx) and feedback == []
+    flaw = n.beats[_beat(hero_plan, "flaw")]
+    assert {r.frame_id for r in flaw.refs if r.kind == "frame"} == {2354, 2419}  # copied from the link, not the model
+
+
+def test_rejected_telling_is_regenerated_with_feedback(hero, hero_ctx, hero_plan, tmp_path):
+    bad = _good(hero, hero_plan, hero_ctx)
+    bad["beats"][2]["text"] = "Then Smith scored."
+    fake = FakeStoryteller(bad, _good(hero, hero_plan, hero_ctx))
+    n = narrate(hero, context=hero_ctx, plan=hero_plan, renderer=fake, cache_dir=tmp_path)
     assert n.source == "foundry" and n.attempts == 2 and len(n.rejections) == 1
-    assert "REJECTED" in client.requests[1]["input"] and "'Smith'" in client.requests[1]["input"]
-    assert "Smith" not in n.headline_text + " ".join(s.text for s in n.sentences)  # only in the recorded rejection
+    assert any("'Smith'" in e for e in fake.calls[1][1])
+    assert "Smith" not in n.headline + " ".join(b.text for b in n.beats)
 
 
-def test_persistent_hallucination_falls_back_to_the_template(hero, tmp_path):
-    bad = _good(hero)
-    bad["sentences"][0]["ref"] = "event:1"
-    renderer, client = _renderer(*[bad] * MAX_ATTEMPTS)
-    n = narrate(hero, renderer=renderer, cache_dir=tmp_path)
+def test_persistent_hallucination_falls_back_to_the_composer(hero, hero_ctx, hero_plan, tmp_path):
+    bad = _good(hero, hero_plan, hero_ctx)
+    bad["beats"][1]["fan"] = "Brandt's pass drags Novak out of the box."
+    fake = FakeStoryteller(*[bad] * MAX_ATTEMPTS)
+    n = narrate(hero, context=hero_ctx, plan=hero_plan, renderer=fake, cache_dir=tmp_path)
     assert n.source == "template" and n.attempts == MAX_ATTEMPTS and len(n.rejections) == MAX_ATTEMPTS
-    assert "passed validation" in n.fallback_reason
-    assert validate(render_template(hero), hero) == []
-    assert not (tmp_path / hero.game_id).exists()  # a fallback is not cached as the model's narration
+    assert "passed the Critic" in n.fallback_reason
+    assert not (tmp_path / hero.game_id).exists()  # a fallback is not cached as the model's telling
 
 
-def test_foundry_errors_and_missing_config_fall_back(hero, tmp_path, monkeypatch):
-    renderer, _ = _renderer(ConnectionError("no route to host"))
-    n = narrate(hero, renderer=renderer, cache_dir=tmp_path)
+def test_foundry_errors_and_missing_config_fall_back(hero, hero_ctx, tmp_path, monkeypatch):
+    n = narrate(hero, context=hero_ctx, renderer=FakeStoryteller(ConnectionError("no route")), cache_dir=tmp_path)
     assert n.source == "template" and "ConnectionError" in n.fallback_reason
     monkeypatch.delenv("FOUNDRY_PROJECT_ENDPOINT", raising=False)
-    n = narrate(hero, cache_dir=tmp_path)
+    n = narrate(hero, context=hero_ctx, cache_dir=tmp_path)
     assert n.source == "template" and "FOUNDRY_PROJECT_ENDPOINT" in n.fallback_reason
 
 
-def test_cache_replays_and_is_keyed_by_account(hero, accounts, tmp_path):
-    renderer, client = _renderer(_good(hero))
-    first = narrate(hero, renderer=renderer, cache_dir=tmp_path)
-    again = narrate(hero, renderer=renderer, cache_dir=tmp_path)  # no queued output left: must come from cache
-    assert again == first and len(client.requests) == 1
-    other = accounts["SYN-0007-goal-1"]
-    renderer2, client2 = _renderer(_good(other))
-    narrate(other, renderer=renderer2, cache_dir=tmp_path)
-    assert len(client2.requests) == 1
-    renderer3, client3 = _renderer(_good(hero))
-    narrate(hero, renderer=renderer3, cache_dir=tmp_path, refresh=True)
-    assert len(client3.requests) == 1
+def test_cache_replays_and_is_keyed_by_account_and_plan(hero, hero_ctx, hero_plan, tmp_path):
+    fake = FakeStoryteller(_good(hero, hero_plan, hero_ctx))
+    first = narrate(hero, context=hero_ctx, plan=hero_plan, renderer=fake, cache_dir=tmp_path)
+    again = narrate(hero, context=hero_ctx, plan=hero_plan, renderer=fake, cache_dir=tmp_path)
+    assert again == first and len(fake.calls) == 1
+    no_context = rules_plan(hero)  # a different plan: not the cached telling
+    fake2 = FakeStoryteller(_good(hero, no_context, None))
+    narrate(hero, plan=no_context, renderer=fake2, cache_dir=tmp_path)
+    assert len(fake2.calls) == 1
 
 
-def test_temperature_can_be_omitted(hero, tmp_path):
-    renderer, client = _renderer(_good(hero), temperature=None)
-    narrate(hero, renderer=renderer, cache_dir=tmp_path)
-    assert "temperature" not in client.requests[0]
+def test_an_unchecked_plan_is_never_told(hero, hero_ctx, hero_plan):
+    bad = hero_plan.model_copy(update={"beats": hero_plan.beats[:-3] + hero_plan.beats[-2:]})  # no lead beat
+    with pytest.raises(UngroundedNarration, match="refused the plan"):
+        narrate(hero, "template", context=hero_ctx, plan=bad)
+
+
+def test_storyteller_runs_an_agent_framework_turn(monkeypatch):
+    seen = {}
+
+    def fake_run(client, name, instructions, message, schema, temperature, tools=None):
+        seen.update(name=name, instructions=instructions, message=message, schema=schema, temperature=temperature)
+        return {"headline": "h", "headline_fan": "h", "beats": []}
+
+    monkeypatch.setattr("replay_room.explain.foundry.run_structured", fake_run)
+    teller = FoundryStoryteller(FoundryConfig("https://x.services.ai.azure.com/api/projects/p", "m", 0.4), client=object())
+    teller.render({"beats": []}, ["fix this"])
+    assert seen["name"] == "Storyteller" and seen["instructions"] == SYSTEM_PROMPT and seen["schema"] is StoryOutput
+    assert "REJECTED" in seen["message"] and "fix this" in seen["message"] and seen["temperature"] == 0.4
 
 
 def test_cli_template(tmp_path, hero):
@@ -240,8 +235,8 @@ def test_cli_template(tmp_path, hero):
     out = io.StringIO()
     assert main([str(path), "--mode", "template"], out=out) == 0
     text = out.getvalue()
-    assert text.startswith("SYN-0007-big_chance_saved-3  [prevented]  source: template")
-    assert "HEADLINE: A goal that didn't happen" in text and "timed overlay:" in text
+    assert text.startswith(f"{HERO}  [prevented]  plan: rules  source: template")
+    assert "HEADLINE: A goal that didn't happen" in text and "[counterfactual]" in text
     out = io.StringIO()
     main([str(path), "--mode", "template", "--json"], out=out)
     assert Narration.model_validate(json.loads(out.getvalue())[0]).moment_id == hero.moment.moment_id
@@ -253,9 +248,7 @@ def test_cli_template(tmp_path, hero):
 @pytest.mark.skipif(os.environ.get("REPLAY_ROOM_FOUNDRY_IT") != "1",
                     reason="live Foundry test: set REPLAY_ROOM_FOUNDRY_IT=1 plus FOUNDRY_PROJECT_ENDPOINT and "
                            "FOUNDRY_MODEL_DEPLOYMENT, after az login")
-def test_live_foundry_narration_is_grounded(hero, tmp_path):
-    n = narrate(hero, cache_dir=tmp_path)
+def test_live_foundry_telling_is_grounded(hero, hero_ctx, hero_plan, tmp_path):
+    n = narrate(hero, context=hero_ctx, plan=hero_plan, cache_dir=tmp_path)
     assert n.source == "foundry", n.fallback_reason
-    assert validate(ModelNarration(headline_text=n.headline_text, sentences=tuple(
-        {"contribution_id": s.contribution_id, "ref": f"{s.ref.kind}:{getattr(s.ref, 'action_id', None) or s.ref.frame_id}",
-         "role": s.role, "text": s.text, "metric": s.metric} for s in n.sentences)), hero) == []
+    assert validate(as_story(n), hero, hero_plan, hero_ctx) == []

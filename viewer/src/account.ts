@@ -3,7 +3,8 @@
 // Number discipline: a value is presented as a meter (its normalized magnitude) and a gloss (plain words,
 // from the exporter). The raw metric is secondary text, and only in Analyst mode. Fan mode never shows one.
 
-import type { Bundle, Contribution, Counterfactual, Meaning, NarrationSentence, StoryStep } from "./bundle";
+import { type Bundle, type ContextFact, type Contribution, type Counterfactual, FACT_KINDS, type Link, type Meaning,
+         type StoryStep } from "./bundle";
 import type { Mode } from "./overlays";
 
 export function signed(v: number): string {
@@ -39,6 +40,23 @@ export function contribution(bundle: Bundle, id: string): Contribution {
 
 export function counterfactualFor(bundle: Bundle, id: string): Counterfactual | undefined {
   return bundle.account.counterfactuals.find((cf) => cf.contribution_id === id);
+}
+
+export function linkOf(bundle: Bundle, id: string): Link {
+  const k = bundle.account.links.find((x) => x.link_id === id);
+  if (!k) throw new Error(`no link ${id}`);
+  return k;
+}
+
+export function contextFactOf(bundle: Bundle, id: string): ContextFact {
+  const f = bundle.context?.facts.find((x) => x.fact_id === id);
+  if (!f) throw new Error(`no context fact ${id}`);
+  return f;
+}
+
+/** The players a link names: the defender first (the beat is about them), then the runner and the man. */
+export function linkPlayers(link: Link): string[] {
+  return [...new Set([link.defender_id, link.runner_id, link.marked_player_id].filter((x): x is string => !!x))];
 }
 
 export function meaningOf(bundle: Bundle, id: string): Meaning {
@@ -116,18 +134,20 @@ export function evidenceRows(bundle: Bundle): ChainRow[] {
 
 // ------------------------------------------------------------------------------------------- the story
 
-const QUOTES_A_METRIC = /\d\.\d|\d+%/;
-
-/** The one caption line of a step. Fan mode never shows a caption that quotes a metric (it gets the plain line). */
+/** The one caption line of a step, in the register: the analyst telling, or the fan telling (no numbers). */
 export function stepCaption(step: StoryStep, mode: Mode): string {
-  if (!step.caption) return step.plain;
-  return mode === "fan" && QUOTES_A_METRIC.test(step.caption) ? step.plain : step.caption;
+  return mode === "fan" ? step.plain : step.caption;
 }
 
 /** Who a step puts in focus: a fact's named players; the outcome's shooter (and whoever denied it); the decider
  *  and the better option's target at a counterfactual. The first is the one who gets the name tag. */
 export function stepPlayers(bundle: Bundle, step: StoryStep): string[] {
-  if (step.kind === "contribution") return highlightedPlayers(contribution(bundle, step.contribution_id!));
+  if (FACT_KINDS.has(step.kind)) {
+    const own = highlightedPlayers(contribution(bundle, step.contribution_id!));
+    return step.link_id ? [...new Set([...own, ...linkPlayers(linkOf(bundle, step.link_id))])] : own;
+  }
+  if (step.kind === "link") return linkPlayers(linkOf(bundle, step.link_id!));
+  if (step.kind === "context") return [];
   if (step.kind === "outcome") {
     const shot = bundle.events.find((e) => e.action_id === bundle.account.outcome.ref.action_id);
     const denial = bundle.account.contributions.find((c) => c.kind === "chance_denied");
@@ -144,35 +164,81 @@ export interface StepView {
   total: number;
   kind: StoryStep["kind"];
   caption: string;
-  title: string; // "Robin Hale" / "The outcome" / "The decision"
+  title: string; // "Robin Hale" / "The outcome" / "The decision" / "Match context"
   teamId: string | null;
   gloss: string;
   meters: { label: string; fraction: number; tone: "pos" | "neg" | "chosen" | "better" | "outcome"; metric: string | null }[];
   headline: boolean;
+  chip: string | null; // "Key moment" / "Where it went wrong" / "Computed link" / "Match context"
+}
+
+const LINK_GLOSS: Record<Link["kind"], string> = {
+  run_past: "beaten by a run into the space",
+  dragged_out: "pulled out of the zone by a run",
+  decoy_run: "taken away from the man by a run",
+  lost_man: "lost the man into the zone",
+};
+
+const CONTEXT_GLOSS: Record<ContextFact["kind"], string> = {
+  line_height: "back line, metres from goal",
+  marking_distance: "room for the attackers, metres to a defender",
+  counter_press: "winning the ball straight back",
+};
+
+function participant(bundle: Bundle, id: string): string {
+  return bundle.account.participants.find((p) => p.player_id === id)?.name ?? id;
+}
+
+function flawChip(bundle: Bundle, step: StoryStep): string | null {
+  if (step.emphasis === "lead") return "Key moment";
+  if (step.kind === "flaw") return bundle.account.outcome.realized ? "Where it went wrong" : "How the chance came";
+  if (step.kind === "punish") return "Punished";
+  return null;
 }
 
 /** Everything the step card shows, mode-aware. Numbers appear only as Analyst `metric` text. */
 export function stepView(bundle: Bundle, step: StoryStep, mode: Mode): StepView {
-  const base = { index: step.index, total: bundle.story.length, kind: step.kind, caption: stepCaption(step, mode) };
+  const base = { index: step.index, total: bundle.story.length, kind: step.kind, caption: stepCaption(step, mode),
+                 headline: step.emphasis === "lead" };
   const analyst = mode === "analyst";
-  if (step.kind === "contribution") {
+  if (FACT_KINDS.has(step.kind)) {
     const c = contribution(bundle, step.contribution_id!);
     const m = meaningOf(bundle, c.contribution_id);
-    const name = bundle.account.participants.find((p) => p.player_id === c.player_id)?.name ?? c.player_id;
-    return { ...base, title: name, teamId: c.team_id, gloss: m.gloss,
-             headline: c.contribution_id === bundle.account.headline_contribution_id,
-             meters: [{ label: m.gloss, fraction: m.magnitude, tone: m.positive ? "pos" : "neg",
+    const gloss = step.link_id ? LINK_GLOSS[linkOf(bundle, step.link_id).kind] : m.gloss;
+    return { ...base, title: participant(bundle, c.player_id), teamId: c.team_id, gloss, chip: flawChip(bundle, step),
+             meters: [{ label: gloss, fraction: m.magnitude, tone: m.positive ? "pos" : "neg",
                         metric: analyst ? metricText(bundle, c.contribution_id) : null }] };
+  }
+  if (step.kind === "link") {
+    const k = linkOf(bundle, step.link_id!);
+    const own = bundle.meaning.find((x) => x.contribution_id === k.defender_contribution_id);
+    const away = k.metrics.spot_distance_end;
+    return { ...base, title: participant(bundle, k.defender_id), teamId: bundle.account.outcome.conceding_team_id,
+             gloss: LINK_GLOSS[k.kind], chip: "Computed link",
+             meters: own ? [{ label: LINK_GLOSS[k.kind], fraction: own.magnitude, tone: "pos",
+                              metric: analyst && away !== undefined ? `${away.toFixed(1)} m from the shot` : null }] : [] };
+  }
+  if (step.kind === "context") {
+    const f = contextFactOf(bundle, step.context_fact_id!);
+    const top = Math.max(f.here, f.baseline, 1e-9);
+    const unit = f.unit === "share" ? "" : ` ${f.unit}`;
+    const fmt = (v: number) => (f.unit === "share" ? `${Math.round(100 * v)}%` : `${v.toFixed(1)}${unit}`);
+    const spread = f.spread ? ` · usual ${fmt(f.spread[0])}–${fmt(f.spread[1])}` : "";
+    return { ...base, title: "Match context", teamId: f.team_id, gloss: CONTEXT_GLOSS[f.kind], chip: "Match context",
+             meters: [{ label: "Here", fraction: f.here / top, tone: "neg", metric: analyst ? fmt(f.here) : null },
+                      { label: "Usually", fraction: f.baseline / top, tone: "chosen",
+                        metric: analyst ? `${fmt(f.baseline)}${spread} · ${f.confidence} confidence, ${f.sample_size} samples`
+                                        : null }] };
   }
   if (step.kind === "outcome") {
     const o = outcomeView(bundle, mode);
-    return { ...base, title: o.result, teamId: bundle.account.outcome.beneficiary_team_id, gloss: o.primary,
+    return { ...base, title: o.result, teamId: bundle.account.outcome.beneficiary_team_id, gloss: o.primary, chip: null,
              headline: false, meters: [{ label: o.primary, fraction: o.fraction, tone: "outcome", metric: o.metric }] };
   }
   const cf = counterfactualFor(bundle, step.contribution_id!)!;
   const v = decisionView(bundle, cf, mode);
   return { ...base, title: "The decision", teamId: contribution(bundle, cf.contribution_id).team_id,
-           gloss: "a better option was on", headline: false,
+           gloss: "a better option was on", headline: false, chip: null,
            meters: [{ label: v.chosen.label, fraction: v.chosen.fraction, tone: "chosen", metric: v.chosen.metric },
                     { label: v.better.label, fraction: v.better.fraction, tone: "better", metric: v.better.metric }] };
 }
@@ -227,16 +293,16 @@ export interface MomentHeader {
   classLabel: string;
   framing: "realized" | "prevented";
   clock: string;
-  description: string | null; // the narration's headline line, when there is a narration
+  description: string | null; // the telling's headline, in the register
 }
 
-export function momentHeader(bundle: Bundle): MomentHeader {
+export function momentHeader(bundle: Bundle, mode: Mode = "analyst"): MomentHeader {
   const { outcome, moment } = bundle.account;
   return {
     classLabel: moment.type.replace(/_/g, " ").toUpperCase(),
     framing: outcome.realized ? "realized" : "prevented",
     clock: bundle.match.moment_clock,
-    description: bundle.narration?.headline_text ?? null,
+    description: (mode === "fan" ? bundle.narration?.headline_fan : bundle.narration?.headline) ?? null,
   };
 }
 
@@ -258,14 +324,16 @@ export function scoreAt(bundle: Bundle, t: number): { home: number; away: number
 }
 
 export interface Summary {
-  all: NarrationSentence[];
-  source: string; // who wrote it, as recorded by Build 6
+  lines: string[]; // every beat, in the register
+  source: string; // who planned and wrote it, as recorded by the agents
 }
 
-export function summary(bundle: Bundle): Summary | null {
+export function summary(bundle: Bundle, mode: Mode = "analyst"): Summary | null {
   const n = bundle.narration;
   if (!n) return null;
-  const source = n.source === "foundry" ? `Narrated by ${n.model?.split("@")[0] ?? "Foundry"} on Microsoft Foundry`
-                                        : "Template narration (no model)";
-  return { all: n.sentences, source: `${source} · grounded in the account` };
+  const writer = n.source === "foundry" ? `Told by ${n.model?.split("@")[0] ?? "Foundry"} on Microsoft Foundry`
+                                        : "Told by the deterministic composer (no model)";
+  const planner = n.plan_source === "foundry" ? "planned by the Foundry Analyst" : "planned by the rules";
+  return { lines: bundle.story.map((s) => stepCaption(s, mode)),
+           source: `${writer}, ${planner} · every line checked by the Critic` };
 }

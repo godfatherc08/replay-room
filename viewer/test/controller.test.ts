@@ -126,8 +126,9 @@ describe("viewer: Story", () => {
 function shell(b = fixture(), opts: Parameters<typeof buildUI>[2] = {}) {
   const v = new Viewer(b, new FakeScene());
   const roots = { topbar: div(), stage: div(), ribbon: div(), side: div(), footer: div() };
-  const ui = buildUI(roots, v, opts);
-  return { b, v, roots, ui };
+  const keys = opts.keys ?? new EventTarget(); // keep each shell's shortcuts to itself
+  const ui = buildUI(roots, v, { ...opts, keys });
+  return { b, v, roots, ui, keys };
 }
 
 function div(): HTMLDivElement {
@@ -149,7 +150,7 @@ describe("app shell", () => {
     expect(roots.stage.querySelector<HTMLElement>(".rr-step-card")!.hidden).toBe(true);
     expect(card.querySelector(".rr-class-chip")!.textContent).toBe("BIG CHANCE SAVED");
     expect(card.querySelector(".rr-display")!.textContent).toBe("A goal that didn't happen");
-    expect(card.querySelector(".rr-lede")!.textContent).toBe(b.narration!.headline_text);
+    expect(card.querySelector(".rr-lede")!.textContent).toBe(b.narration.headline);
     expect(card.querySelector(".rr-cta")!.textContent).toBe("Play analysis");
   });
 
@@ -177,7 +178,7 @@ describe("app shell", () => {
     const { b, v, roots, ui } = shell();
     ui.state.setView("explore");
     const nodes = [...roots.ribbon.querySelectorAll<HTMLElement>(".rr-node")];
-    const head = b.story.findIndex((s) => s.kind === "contribution" && s.contribution_id === b.account.headline_contribution_id);
+    const head = b.story.findIndex((s) => s.emphasis === "lead");
     expect(nodes.map((n, i) => (n.classList.contains("rr-headline") ? i : -1)).filter((i) => i >= 0)).toEqual([head]);
     nodes[4].querySelector<HTMLButtonElement>("button")!.click();
     expect(ui.state.view).toBe("story");
@@ -198,7 +199,7 @@ describe("app shell", () => {
     expect(fanText()).not.toMatch(/\d\.\d/);
     ui.state.setMode("analyst");
     expect(roots.stage.querySelectorAll(".rr-step-card .rr-metric")).toHaveLength(2);
-    expect(roots.stage.querySelector(".rr-step-card .rr-metric")!.textContent).toMatch(/^option value 0\.113/);
+    expect(roots.stage.querySelector(".rr-step-card .rr-metric")!.textContent).toMatch(/^option value 0\.097/);
   });
 
   it("every value in the chain is a meter with a gloss", () => {
@@ -256,6 +257,48 @@ describe("app shell", () => {
     expect(roots.footer.querySelector(".rr-now")!.textContent).toBe(matchClock(v.bundle, v.clock.time));
   });
 
+  it("Space plays and pauses without scrolling the page; Left / Right step between beats", () => {
+    const { v, ui, keys } = shell();
+    const press = (key: string, target: EventTarget = keys, type = "keydown") => {
+      const e = new KeyboardEvent(type, { key, code: key === " " ? "Space" : key, cancelable: true, bubbles: true });
+      Object.defineProperty(e, "target", { value: target });
+      keys.dispatchEvent(e);
+      return e;
+    };
+    const space = press(" ");
+    expect(space.defaultPrevented).toBe(true); // the browser's scroll-on-space never runs
+    expect(v.story.playing).toBe(true);
+    expect(press(" ", keys, "keyup").defaultPrevented).toBe(true); // nor a focused button's click
+    press(" ");
+    expect(v.story.playing).toBe(false);
+    const at = v.story.index;
+    expect(press("ArrowRight").defaultPrevented).toBe(true);
+    expect(v.story.index).toBe(at + 1);
+    press("ArrowLeft");
+    expect(v.story.index).toBe(at);
+    const input = document.createElement("input"); // typing is left alone
+    expect(press(" ", input).defaultPrevented).toBe(false);
+    ui.state.setView("explore"); // Explore: Space plays / pauses the replay itself
+    const was = v.clock.playing;
+    press(" ");
+    expect(v.clock.playing).toBe(!was);
+    press("ArrowRight");
+    expect(v.active).not.toBeNull();
+  });
+
+  it("tells the flaw and the context as their own beats on the ribbon", () => {
+    const { b, roots } = shell();
+    const nodes = [...roots.ribbon.querySelectorAll<HTMLElement>(".rr-node")];
+    const flaw = b.story.findIndex((s) => s.kind === "flaw");
+    const ctx = b.story.findIndex((s) => s.kind === "context");
+    expect(nodes[flaw].classList.contains("rr-flaw")).toBe(true);
+    expect(nodes[ctx].querySelector(".rr-node-label")!.textContent).toBe("Context");
+    nodes[ctx].querySelector<HTMLButtonElement>("button")!.click();
+    const card = roots.stage.querySelector<HTMLElement>(".rr-step-card")!;
+    expect(card.querySelector(".rr-headline-chip")!.textContent).toBe("Match context");
+    expect([...card.querySelectorAll(".rr-gloss")].map((g) => g.textContent)).toEqual(["Here", "Usually"]);
+  });
+
   it("the chain is collapsed in Story and open in Explore", () => {
     const { roots, ui } = shell();
     expect(roots.side.querySelector(".rr-row")).toBeNull();
@@ -267,7 +310,7 @@ describe("app shell", () => {
 
   it("leaves out what the bundle lacks", () => {
     const b = fixture();
-    b.narration = null;
+    (b as { narration: unknown }).narration = null;
     b.account.counterfactuals = [];
     const { roots } = shell(b);
     expect(roots.side.querySelector(".rr-summary")).toBeNull();

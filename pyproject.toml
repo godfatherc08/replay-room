@@ -14,12 +14,17 @@ dependencies = [
     "socceraction==1.5.3",
     # socceraction 1.5.3 pins pandera 0.17, which breaks on multimethod>=2.
     "multimethod<2",
+    # the engine's MCP server (and the client the agents and the smoke test use); httpx for Azure AI REST calls
+    "mcp>=2.2,<3",
+    "httpx>=0.27,<1",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-# Build 6: the Foundry renderer (imported lazily; the template fallback needs neither).
-foundry = ["azure-ai-projects>=2.9,<3", "azure-identity>=1.17"]
+# The model agents (Analyst, Storyteller) on Microsoft Agent Framework + Foundry. Imported lazily: the
+# deterministic floors (rule plan, composer) need none of it.
+foundry = ["agent-framework-core>=1.23,<2", "agent-framework-foundry>=1.15,<2", "azure-identity>=1.17"]
+agents = ["replay-room[foundry]"]
 
 [project.scripts]
 replay = "replay_room.replay.__main__:main"

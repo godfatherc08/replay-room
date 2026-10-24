@@ -1,4 +1,4 @@
-// Story Mode's sequencer: walks the bundle's story steps (build-up -> headline -> outcome -> counterfactual)
+// Story Mode's sequencer: walks the bundle's story steps (the Analyst's framing plan, as told)
 // one at a time, auto-advancing after a dwell, or stepped by hand. It only keeps time and the index; what a
 // step shows is the controller's job (Viewer.showStep).
 
@@ -18,8 +18,8 @@ export class Story {
   private listeners: Listener[] = [];
 
   constructor(readonly steps: StoryStep[], private readonly onStep: (step: StoryStep) => void = () => {}) {
-    const lastFact = steps.map((s) => s.kind).lastIndexOf("contribution"); // the exporter puts the headline last
-    this.climax = new Set(steps.filter((s, i) => s.kind !== "contribution" || i === lastFact).map((s) => s.index));
+    this.climax = new Set(steps.filter((s) => s.emphasis === "lead" || s.kind === "outcome" || s.kind === "counterfactual")
+      .map((s) => s.index));
   }
 
   get state(): StoryState {

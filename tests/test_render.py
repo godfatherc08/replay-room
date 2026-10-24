@@ -1,25 +1,38 @@
 import json
-import warnings
 
 import pytest
 
-from replay_room.attribution.engine import attribute_match
 from replay_room.explain import narrate
+from replay_room.framing import rules_plan
 from replay_room.ingest.loader import Match
 from replay_room.render import bundle_path, export_moment, write_bundles
 from replay_room.render.export import BUNDLE_VERSION, dumps
 
 
 @pytest.fixture(scope="module")
-def accounts(match):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", FutureWarning)
-        return attribute_match(match)
+def accounts(all_accounts):
+    return list(all_accounts.values())
 
 
 @pytest.fixture(scope="module")
-def bundles(accounts, match):
-    return {a.moment.moment_id: export_moment(a, match, narrate(a, "template"), accounts) for a in accounts}
+def told(accounts, all_contexts):
+    out = {}
+    for a in accounts:
+        ctx = all_contexts[a.moment.moment_id]
+        plan = rules_plan(a, ctx)
+        out[a.moment.moment_id] = {"narration": narrate(a, "template", context=ctx, plan=plan), "plan": plan,
+                                   "context": ctx}
+    return out
+
+
+def _export(a, match, told, accounts):
+    t = told[a.moment.moment_id]
+    return export_moment(a, match, t["narration"], t["plan"], accounts, t["context"])
+
+
+@pytest.fixture(scope="module")
+def bundles(accounts, match, told):
+    return {a.moment.moment_id: _export(a, match, told, accounts) for a in accounts}
 
 
 def test_bundle_is_self_contained(bundles, accounts):
@@ -91,24 +104,24 @@ def test_events_cover_the_chain_and_citations(bundles):
     assert (save["type"], save["player_id"], save["in_window"]) == ("keeper_save", "NBR-01", True)
 
 
-def test_missing_objects_stay_missing(accounts, match):
+def test_missing_objects_stay_missing(accounts, match, told):
     a = accounts[0]
     w = a.moment.window
     gap = w.frame_start + 5
     t = match.tracking
     holed = Match(meta=match.meta, actions=match.actions, context=match.context,
                   tracking=t[~((t["frame_id"] == gap) & (t["player_id"] == "EPA-09"))], pass_targets=match.pass_targets)
-    tr = export_moment(a, holed)["tracks"]["EPA-09"]
+    tr = _export(a, holed, told, accounts)["tracks"]["EPA-09"]
     assert tr["x"][5] is None and tr["vx"][5] is None and tr["x"][4] is not None and tr["x"][6] is not None
 
 
-def test_deterministic_and_written_next_to_the_account(accounts, match, tmp_path):
-    first = write_bundles(accounts[:2], match, tmp_path)
+def test_deterministic_and_written_next_to_the_account(accounts, match, told, tmp_path):
+    first = write_bundles(accounts[:2], match, told, tmp_path)
     text = [p.read_text(encoding="utf-8") for p in first]
-    again = write_bundles(accounts[:2], match, tmp_path)
+    again = write_bundles(accounts[:2], match, told, tmp_path)
     assert [p.read_text(encoding="utf-8") for p in again] == text
     assert first[0] == bundle_path(accounts[0], tmp_path) == tmp_path / "SYN-0007" / f"{accounts[0].moment.moment_id}.bundle.json"
-    assert text[0] == dumps(export_moment(accounts[0], match, None, accounts[:2]))
+    assert text[0] == dumps(_export(accounts[0], match, told, accounts[:2]))
     index = json.loads((tmp_path / "index.json").read_text(encoding="utf-8"))
     assert [e["bundle"] for e in index] == sorted(p.relative_to(tmp_path).as_posix() for p in first)
 
@@ -143,11 +156,14 @@ def test_display_rows_follow_the_account(bundles):
     assert units["d163"] == "xG" and units["a163"] == "ΔxT" and units["a157"] == "VAEP"
 
 
-def test_narration_and_moments_are_embedded(bundles, accounts):
+def test_narration_plan_context_and_moments_are_embedded(bundles, accounts):
     for b in bundles.values():
         n = b["narration"]
-        assert n["moment_id"] == b["account"]["moment"]["moment_id"] and n["sentences"]
-        assert {s["contribution_id"] for s in n["sentences"]} == {c["contribution_id"] for c in b["account"]["contributions"]}
+        assert n["moment_id"] == b["account"]["moment"]["moment_id"] and n["narration_version"] == "2"
+        assert [x["beat_id"] for x in n["beats"]] == [x["beat_id"] for x in b["plan"]["beats"]]
+        assert b["context"]["moment_id"] == n["moment_id"] and b["editions"] == {}
+        cited = {r["action_id"] for x in n["beats"] for r in x["refs"] if r["kind"] == "event"}
+        assert cited <= {e["action_id"] for e in b["events"]}  # every event a beat cites can be drawn
         assert [m["moment_id"] for m in b["match_moments"]] == sorted(
             (a.moment.moment_id for a in accounts),
             key=lambda i: next((a.moment.period_id, a.moment.t_event, i) for a in accounts if a.moment.moment_id == i))
@@ -186,27 +202,20 @@ def test_outcome_display_and_kits(bundles):
         assert kits["home"]["keeper"] not in (kits["home"]["shirt"], kits["away"]["shirt"])
 
 
-def test_story_builds_up_to_the_headline_then_the_outcome(bundles):
+def test_story_plays_the_plan_in_both_registers(bundles):
     for b in bundles.values():
-        a = b["account"]
-        story = b["story"]
+        story, plan = b["story"], b["plan"]
         assert [s["index"] for s in story] == list(range(len(story)))
-        steps = [s for s in story if s["kind"] == "contribution"]
-        assert {s["contribution_id"] for s in steps} == {c["contribution_id"] for c in a["contributions"]}
-        assert steps[-1]["contribution_id"] == a["headline_contribution_id"]
-        times = {d["contribution_id"]: d["t"] for d in b["display"]}
-        build_up = [times[s["contribution_id"]] for s in steps[:-1]]
-        assert build_up == sorted(build_up)
-        kinds = [s["kind"] for s in story]
-        assert kinds == ["contribution"] * len(steps) + ["outcome"] + ["counterfactual"] * len(a["counterfactuals"])
+        assert [(s["beat_id"], s["kind"]) for s in story] == [(x["beat_id"], x["kind"]) for x in plan["beats"]]
         frames = set(b["frames"]["frame_ids"])
-        sentences = {s["contribution_id"]: s["text"] for s in b["narration"]["sentences"]}
+        told = {x["beat_id"]: x for x in b["narration"]["beats"]}
         for s in story:
-            assert s["frame_id"] in frames and s["caption"] and s["plain"]
-            if s["kind"] == "contribution":
-                assert s["caption"] == sentences[s["contribution_id"]]
-                assert not any(ch.isdigit() for ch in s["plain"])
+            assert s["frame_id"] in frames
+            assert (s["caption"], s["plain"]) == (told[s["beat_id"]]["text"], told[s["beat_id"]]["fan"])
+            assert not any(ch.isdigit() for ch in s["plain"])
     hero = bundles["SYN-0007-big_chance_saved-3"]["story"]
-    assert hero[-1]["kind"] == "counterfactual" and hero[-1]["frame_id"] == 2408
-    assert hero[-1]["caption"] == "The better option: pass to #9 Sam Adeyemi, instead of the pass to #11 Jordan Ferraro."
-    assert hero[-2]["caption"] == "A goal that didn't happen for Eastport Athletic."
+    assert [s["kind"] for s in hero[-3:]] == ["lead", "outcome", "counterfactual"]
+    assert hero[-1]["frame_id"] == 2408  # the decision frame
+    flaw = next(s for s in hero if s["kind"] == "flaw")
+    assert flaw["link_id"] == "LNBR-05" and flaw["frame_id"] == 2419  # the link's end: the gap at its widest
+    assert hero[-1]["plain"] == "Instead of the pass to Ferraro, Hale had a better option: a pass to Adeyemi."

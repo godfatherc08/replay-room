@@ -58,6 +58,23 @@ export interface Outcome {
   realized: boolean;
   beneficiary_team_id: string;
   conceding_team_id: string;
+  zone: string | null; // "the middle of the box"
+}
+
+/** An off-ball causal link the engine measured on the tracking (attribution.links). */
+export interface Link {
+  link_id: string;
+  kind: "decoy_run" | "dragged_out" | "run_past" | "lost_man";
+  defender_contribution_id: string;
+  defender_id: string;
+  marked_player_id: string | null;
+  runner_id: string | null;
+  runner_contribution_id: string | null;
+  zone: string;
+  enabled: EventRef | null;
+  enabled_contribution_id: string | null;
+  metrics: Record<string, number>;
+  evidence: FrameRef[];
 }
 
 export interface Moment {
@@ -80,8 +97,10 @@ export interface Account {
   teams: { team_id: string; name: string }[];
   participants: { player_id: string; name: string; team_id: string; shirt_number: number | null }[];
   headline_contribution_id: string;
+  supporting_contribution_id: string | null;
   contributions: Contribution[];
   counterfactuals: Counterfactual[];
+  links: Link[];
   evidence: { events: number[]; frames: number[] };
 }
 
@@ -158,24 +177,66 @@ export interface MatchMoment {
   match_clock: string;
 }
 
-export interface NarrationSentence {
+export type BeatKind = "build_up" | "lead" | "flaw" | "punish" | "link" | "context" | "outcome" | "counterfactual";
+
+/** One told beat of the framing plan (explain.schema.NarratedBeat). */
+export interface NarratedBeat {
   index: number;
-  contribution_id: string;
-  role: string;
-  headline: boolean;
-  text: string;
-  ref: Ref;
+  beat_id: string;
+  kind: BeatKind;
+  emphasis: "lead" | "support" | "detail";
+  contribution_id: string | null;
+  link_id: string | null;
+  context_fact_id: string | null;
+  text: string; // analyst register
+  fan: string; // fan register
+  refs: Ref[];
   t: number;
 }
 
 export interface Narration {
+  narration_version: "2";
   moment_id: string;
   framing: "realized" | "prevented";
+  plan_source: "rules" | "foundry";
   source: "foundry" | "template";
   model: string | null;
   fallback_reason: string | null;
-  headline_text: string;
-  sentences: NarrationSentence[];
+  headline: string;
+  headline_fan: string;
+  beats: NarratedBeat[];
+}
+
+/** A match-context fact: a per-match baseline for the defending team and this moment's value (context.baselines). */
+export interface ContextFact {
+  fact_id: string;
+  kind: "counter_press" | "line_height" | "marking_distance";
+  team_id: string;
+  unit: "m" | "s" | "share";
+  baseline: number;
+  here: number;
+  spread: [number, number] | null;
+  deviates: boolean;
+  direction: "higher" | "lower" | "same";
+  sample_size: number;
+  confidence: "low" | "medium" | "high";
+  metrics: Record<string, number>;
+  evidence: Ref[];
+}
+
+export interface MatchContext {
+  moment_id: string;
+  team_id: string;
+  facts: ContextFact[];
+  insufficient: [string, string][];
+}
+
+export interface Plan {
+  source: "rules" | "foundry";
+  lead_contribution_id: string;
+  flaw_contribution_id: string | null;
+  beats: { beat_id: string; kind: BeatKind; emphasis: string; contribution_id: string | null; link_id: string | null;
+           context_fact_id: string | null }[];
 }
 
 /** Plain-language meaning of a contribution (render.display.meaning). */
@@ -194,22 +255,32 @@ export interface OutcomeDisplay {
   result: string; // "Goal" | "No goal" | "A goal that didn't happen"
 }
 
-/** One beat of Story Mode, in play order (render.export.story_steps). */
+/** One beat of Story Mode, in play order (render.export.story_steps): the plan's beat, as told. */
 export interface StoryStep {
   index: number;
-  kind: "contribution" | "outcome" | "counterfactual";
+  kind: BeatKind;
+  emphasis: "lead" | "support" | "detail";
+  beat_id: string;
   contribution_id: string | null;
+  link_id: string | null;
+  context_fact_id: string | null;
   frame_id: number;
-  caption: string | null; // the narration sentence (contribution) or the assembled line
-  plain: string; // the same idea without numbers
+  caption: string; // analyst register
+  plain: string; // fan register: no numbers, no jargon
 }
 
+/** Story kinds that tell one contribution of the account. */
+export const FACT_KINDS: ReadonlySet<BeatKind> = new Set(["build_up", "lead", "flaw", "punish"]);
+
 export interface Bundle {
-  bundle_version: "3";
+  bundle_version: "4";
   match: MatchInfo;
   goalkeepers: string[];
   display: DisplayRow[];
-  narration: Narration | null;
+  narration: Narration;
+  plan: Plan;
+  context: MatchContext | null;
+  editions: Record<string, unknown>;
   match_moments: MatchMoment[];
   account: Account;
   pitch: { length: number; width: number; units: "m"; origin: string; x_axis: string; frame_rate_hz: number };
@@ -234,13 +305,13 @@ export interface IndexEntry {
 }
 
 const REQUIRED = ["account", "pitch", "teams", "frames", "objects", "tracks", "events", "key_spot", "jumps", "match",
-                  "goalkeepers", "display", "narration", "match_moments", "meaning", "outcome_display",
-                  "story"] as const;
+                  "goalkeepers", "display", "narration", "plan", "context", "match_moments", "meaning",
+                  "outcome_display", "story"] as const;
 
 export function parseBundle(data: unknown): Bundle {
   if (typeof data !== "object" || data === null) throw new Error("bundle is not an object");
   const b = data as Record<string, unknown>;
-  if (b.bundle_version !== "3") throw new Error(`unsupported bundle version ${String(b.bundle_version)}`);
+  if (b.bundle_version !== "4") throw new Error(`unsupported bundle version ${String(b.bundle_version)}`);
   for (const key of REQUIRED) if (!(key in b)) throw new Error(`bundle is missing "${key}"`);
   const bundle = data as Bundle;
   const frames = new Set(bundle.frames.frame_ids);

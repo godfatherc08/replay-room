@@ -26,9 +26,10 @@ describe("Story", () => {
     s.setSpeed(2);
     s.tick(DEFAULT_DWELL / 2 + 0.01);
     expect(s.index).toBe(2);
-    const head = b.story.findIndex((x) => x.contribution_id === b.account.headline_contribution_id && x.kind === "contribution");
+    const head = b.story.findIndex((x) => x.emphasis === "lead");
     expect([...s.climax].sort((x, y) => x - y)).toEqual(
-      b.story.filter((x) => x.kind !== "contribution" || x.index === head).map((x) => x.index));
+      b.story.filter((x) => x.emphasis === "lead" || x.kind === "outcome" || x.kind === "counterfactual")
+        .map((x) => x.index));
     s.goto(head);
     expect(s.dwell).toBeCloseTo((DEFAULT_DWELL * CLIMAX_DWELL) / 2);
   });

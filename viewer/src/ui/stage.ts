@@ -78,7 +78,7 @@ export function buildStage(root: HTMLElement, viewer: Viewer, state: UIState, co
   root.append(view, tools, legend, title, card);
 
   const renderTitle = () => {
-    const h = momentHeader(bundle);
+    const h = momentHeader(bundle, state.mode);
     const o = outcomeView(bundle, state.mode);
     const head = el("div", "rr-card-head");
     head.append(el("span", "rr-class-chip", h.classLabel), el("span", "rr-micro", h.clock));
@@ -115,7 +115,7 @@ export function buildStage(root: HTMLElement, viewer: Viewer, state: UIState, co
     }
     who.append(el("span", undefined, v.title));
     top.append(who, counter);
-    if (v.headline) top.insertBefore(el("span", "rr-headline-chip", "Key moment"), counter);
+    if (v.chip) top.insertBefore(el("span", `rr-headline-chip${v.headline ? "" : " rr-chip-support"}`, v.chip), counter);
     const caption = el("p", "rr-caption", v.caption);
     const meters = el("div", "rr-step-meters");
     for (const m of v.meters) {

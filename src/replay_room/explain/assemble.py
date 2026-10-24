@@ -1,8 +1,7 @@
-"""Turn a *validated* renderer output into the outgoing ``Narration`` and its timed overlay.
+"""Turn a *validated* Storyteller output into the outgoing ``Narration``.
 
-Refs and times are copied from the account (the model's ref string only selects
-which of the contribution's records it cites), so the overlay is timed by the
-data, never by the model.
+Refs and times are copied from the tool outputs (``framing.Facts.refs``), so
+each beat is timed and grounded by the data, never by the model.
 """
 
 from __future__ import annotations
@@ -10,8 +9,10 @@ from __future__ import annotations
 import hashlib
 
 from replay_room.contracts.causal_account import CausalAccount
-from replay_room.explain.brief import ref_key
-from replay_room.explain.schema import CUE_SECONDS, ModelNarration, Narration, OverlayCue, Sentence
+from replay_room.contracts.context import MatchContext
+from replay_room.contracts.plan import FramingPlan
+from replay_room.explain.schema import Narration, NarratedBeat, StoryOutput
+from replay_room.framing.facts import Facts
 
 
 def account_hash(account: CausalAccount) -> str:
@@ -20,31 +21,27 @@ def account_hash(account: CausalAccount) -> str:
     return hashlib.sha256(stable.model_dump_json().encode("utf-8")).hexdigest()
 
 
-def assemble(output: ModelNarration, account: CausalAccount, source: str, **meta) -> Narration:
-    by_id = {c.contribution_id: c for c in account.contributions}
-    sentences = []
-    for i, s in enumerate(output.sentences):
-        c = by_id[s.contribution_id]
-        ref = next(r for r in c.evidence if ref_key(r) == s.ref)
-        t = ref.time_seconds if ref.kind == "event" else ref.timestamp
-        sentences.append(Sentence(
-            index=i, contribution_id=c.contribution_id, role=c.role,
-            headline=c.contribution_id == account.headline_contribution_id, text=s.text, ref=ref,
-            metric=s.metric, period_id=account.moment.period_id, t=t,
-        ))
-    timeline = sorted(sentences, key=lambda s: (s.t, s.index))
-    cues = []
-    for k, s in enumerate(timeline):
-        nxt = timeline[k + 1].t if k + 1 < len(timeline) else None
-        end = s.t + CUE_SECONDS if nxt is None or nxt <= s.t else min(nxt, s.t + CUE_SECONDS)
-        cues.append(OverlayCue(
-            sentence_index=s.index, contribution_id=s.contribution_id, period_id=s.period_id,
-            t_start=s.t, t_end=end, text=s.text,
-            frame_id=s.ref.frame_id if s.ref.kind == "frame" else None,
-            action_id=s.ref.action_id if s.ref.kind == "event" else None,
+def plan_hash(plan: FramingPlan, context: MatchContext | None) -> str:
+    body = plan.model_dump_json() + (context.model_dump_json() if context is not None else "")
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def assemble(output: StoryOutput, account: CausalAccount, plan: FramingPlan, context: MatchContext | None,
+             source: str, **meta) -> Narration:
+    facts = Facts(account, context)
+    beats = []
+    for i, (b, told) in enumerate(zip(plan.beats, output.beats)):
+        refs = facts.refs(b)
+        first = refs[0]
+        beats.append(NarratedBeat(
+            index=i, beat_id=b.beat_id, kind=b.kind, emphasis=b.emphasis, contribution_id=b.contribution_id,
+            link_id=b.link_id, context_fact_id=b.context_fact_id, text=told.text, fan=told.fan, refs=refs,
+            period_id=account.moment.period_id,
+            t=first.time_seconds if first.kind == "event" else first.timestamp,
         ))
     return Narration(
         account_id=account.account_id, moment_id=account.moment.moment_id, account_hash=account_hash(account),
+        plan_hash=plan_hash(plan, context), plan_source=plan.source,
         framing="realized" if account.outcome.realized else "prevented", source=source,
-        headline_text=output.headline_text, sentences=tuple(sentences), timed_overlay=tuple(cues), **meta,
+        headline=output.headline, headline_fan=output.headline_fan, beats=tuple(beats), **meta,
     )

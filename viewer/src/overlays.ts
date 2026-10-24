@@ -3,13 +3,15 @@
 // Every position drawn is an observed one; every number is the account's.
 //
 // Vocabulary (the on-pitch legend): dashed yellow = pass / movement; solid red = shot; translucent cyan =
-// threat zone (the space at the key spot Build 4 measured); amber line = marking; at a decision, a solid
-// white arrow is the option chosen and a dashed green arrow the better option. No floating metric tags:
-// the only labels on the pitch are the counterfactual's two options (values in Analyst mode only).
+// threat zone (the space at the key spot Build 4 measured); amber line = marking, and a defender's own path
+// in a computed link; at a decision, a solid white arrow is the option chosen and a dashed green arrow the
+// better option; for match context, a solid amber line is the back line here and a dashed white line where
+// it usually is. No floating metric tags: the only labels on the pitch are the counterfactual's two options
+// (values in Analyst mode only).
 
-import { contribution, counterfactualFor } from "./account";
-import type { Bundle, BundleEvent, Contribution, Counterfactual, StoryStep } from "./bundle";
-import { positionAt, velocityAt } from "./bundle";
+import { contextFactOf, contribution, counterfactualFor, linkOf } from "./account";
+import type { Bundle, BundleEvent, ContextFact, Contribution, Counterfactual, Link, StoryStep } from "./bundle";
+import { FACT_KINDS, positionAt, velocityAt } from "./bundle";
 
 export type Vec2 = [number, number];
 export type Mode = "analyst" | "fan";
@@ -183,15 +185,100 @@ export function overlaysFor(bundle: Bundle, id: string, mode: Mode = "analyst"):
   return contributionOverlays(bundle, id);
 }
 
-/** Story mode: only this step's drawing. A contribution step draws the action itself, never its counterfactual
- *  (that is the final beat). */
+/** A path between two window frames (inclusive), as observed. */
+function path(bundle: Bundle, id: string, from: number, to: number): Vec2[] {
+  const ids = bundle.frames.frame_ids;
+  const out: Vec2[] = [];
+  for (let i = ids.indexOf(from); i >= 0 && i <= ids.indexOf(to); i++) {
+    const p = positionAt(bundle, id, ids[i]);
+    if (p) out.push(p);
+  }
+  return out;
+}
+
+/** A computed link: the runner's run (yellow) and the defender's own path (amber) over the measured span, the zone
+ *  the defender left, how far from it they ended (dashed cyan), and the action that used the zone. */
+export function linkOverlays(bundle: Bundle, link: Link): Overlay[] {
+  const a = link.evidence[0].frame_id;
+  const b = link.evidence[link.evidence.length - 1].frame_id;
+  const out: (Overlay | null)[] = [];
+  const zone = [bundle.key_spot.x, bundle.key_spot.y] as Vec2;
+  out.push({ type: "disc", center: zone, radius: 2 * bundle.key_spot.sigma_m, color: COLORS.zone, alpha: 0.3 });
+  if (link.runner_id) {
+    const run = path(bundle, link.runner_id, a, b);
+    if (run.length >= 2) out.push({ type: "trail", points: run, color: COLORS.pass });
+  }
+  const back = path(bundle, link.defender_id, a, b);
+  if (back.length >= 2) out.push({ type: "trail", points: back, color: COLORS.marking });
+  const end = positionAt(bundle, link.defender_id, b);
+  if (end) out.push({ type: "line", a: end, b: zone, color: COLORS.zone, dashed: true });
+  if (link.enabled) {
+    const e = bundle.events.find((x) => x.action_id === link.enabled!.action_id);
+    if (e && Math.hypot(e.end[0] - e.start[0], e.end[1] - e.start[1]) > 0.5) {
+      out.push({ type: "arrow", from: e.start, to: e.end, color: COLORS.pass, width: 0.2, dashed: false });
+    }
+  }
+  return out.filter((o): o is Overlay => o !== null);
+}
+
+/** Which way a team defends: its own goal line's x (home defends x = 0). */
+function ownGoalX(bundle: Bundle, teamId: string): number {
+  return bundle.teams.find((t) => t.team_id === teamId)?.side === "home" ? 0 : bundle.pitch.length;
+}
+
+/** Match context, drawn at its "here" frame: the back line here and where it usually stands; or each attacker's
+ *  distance to the nearest defender; or where the ball was lost. */
+export function contextOverlays(bundle: Bundle, fact: ContextFact): Overlay[] {
+  const frames = fact.evidence.filter((r) => r.kind === "frame").map((r) => r.frame_id);
+  const frame = frames.length ? frames[frames.length - 1] : null;
+  const goal = ownGoalX(bundle, fact.team_id);
+  const dir = goal === 0 ? 1 : -1;
+  const W = bundle.pitch.width;
+  const team = (id: string) => bundle.objects.find((o) => o.id === id)?.team_id;
+  const outfield = (teamId: string) => bundle.objects.filter((o) => o.kind === "player" && o.team_id === teamId
+                                                                    && !bundle.goalkeepers.includes(o.id));
+  if (fact.kind === "counter_press") {
+    const ref = fact.evidence.find((r) => r.kind === "event");
+    const e = ref && ref.kind === "event" ? bundle.events.find((x) => x.action_id === ref.action_id) : undefined;
+    return e ? [{ type: "cross", at: e.start, color: COLORS.marking }] : [];
+  }
+  if (frame === null) return [];
+  if (fact.kind === "line_height") {
+    const depths = outfield(fact.team_id).map((o) => positionAt(bundle, o.id, frame)).filter((p): p is Vec2 => !!p)
+      .map((p) => Math.abs(p[0] - goal));
+    if (!depths.length) return [];
+    const here = goal + dir * Math.min(...depths);
+    const usual = goal + dir * fact.baseline;
+    return [{ type: "line", a: [here, 0], b: [here, W], color: COLORS.marking },
+            { type: "line", a: [usual, 0], b: [usual, W], color: COLORS.chosen, dashed: true }];
+  }
+  const rival = bundle.objects.find((o) => o.kind === "player" && team(o.id) !== fact.team_id)?.team_id ?? "";
+  const defenders = outfield(fact.team_id).map((o) => positionAt(bundle, o.id, frame)).filter((p): p is Vec2 => !!p);
+  const out: Overlay[] = [];
+  for (const o of outfield(rival)) {
+    const p = positionAt(bundle, o.id, frame);
+    if (!p || Math.abs(p[0] - goal) > 35 || !defenders.length) continue;
+    const near = defenders.reduce((m, d) => (Math.hypot(d[0] - p[0], d[1] - p[1]) < Math.hypot(m[0] - p[0], m[1] - p[1]) ? d : m));
+    out.push({ type: "line", a: p, b: near, color: COLORS.marking, dashed: true });
+  }
+  return out;
+}
+
+/** Story mode: only this step's drawing. A fact step draws the action itself (and, when it is told through a
+ *  computed link, the link), never its counterfactual (that is the final beat). */
 export function stepOverlays(bundle: Bundle, step: StoryStep, mode: Mode = "analyst"): Overlay[] {
+  if (FACT_KINDS.has(step.kind)) {
+    if (step.link_id) return linkOverlays(bundle, linkOf(bundle, step.link_id));
+    return contributionOverlays(bundle, step.contribution_id!);
+  }
   switch (step.kind) {
-    case "contribution":
-      return contributionOverlays(bundle, step.contribution_id!);
+    case "link":
+      return linkOverlays(bundle, linkOf(bundle, step.link_id!));
+    case "context":
+      return contextOverlays(bundle, contextFactOf(bundle, step.context_fact_id!));
     case "outcome":
       return outcomeOverlays(bundle);
-    case "counterfactual": {
+    default: {
       const cf = counterfactualFor(bundle, step.contribution_id!);
       return cf ? counterfactualOverlays(bundle, cf, mode) : [];
     }

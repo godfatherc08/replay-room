@@ -1,78 +1,62 @@
-"""Foundry renderer: the one place in Replay Room that calls a language model.
+"""Foundry Storyteller: the model that tells a framing plan, on Microsoft Agent Framework.
 
-The model is a renderer, not a reasoner. It receives the narration brief (the
-causal account, reshaped; see ``brief``) and nothing else, and must return JSON
-matching ``schema.MODEL_OUTPUT_SCHEMA`` (structured outputs, strict). Its
-output is untrusted until ``validate`` passes it; ``narrate`` does that.
+The model is a writer, not a reasoner. It receives the story brief (the plan
+with its records resolved; see ``brief``) and must return JSON matching
+``schema.StoryOutput`` (structured outputs). Its output is untrusted until the
+Critic (``validate``) passes it; ``narrate`` does that.
 
-Connection (azure-ai-projects 2.x): ``AIProjectClient(endpoint, credential)``
-with Entra ID (``DefaultAzureCredential``: ``az login`` locally, a managed
-identity on Azure Container Apps); ``get_openai_client()`` gives an OpenAI
-client on ``{endpoint}/openai/v1`` whose bearer token is scoped to
-``https://ai.azure.com/.default``; generation is a Responses API call against a
-model deployment in the project.
+Connection: an Agent Framework ``Agent`` on a ``FoundryChatClient`` (the
+Responses API of a Foundry project) with Entra ID (``DefaultAzureCredential``:
+``az login`` locally, a managed identity on Azure Container Apps).
 
 Configuration (environment):
 
 * ``FOUNDRY_PROJECT_ENDPOINT``: the project endpoint,
   ``https://<resource>.services.ai.azure.com/api/projects/<project>``;
-* ``FOUNDRY_MODEL_DEPLOYMENT``: the deployment name of a model that supports
-  structured outputs;
-* ``FOUNDRY_TEMPERATURE``: default ``0.2``; ``none`` omits it (for models that
-  reject a temperature).
+* ``FOUNDRY_MODEL_DEPLOYMENT``: a deployment that supports structured outputs;
+* ``FOUNDRY_TEMPERATURE``: default ``0.4``; ``none`` omits it.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
-from replay_room.explain.schema import MODEL_OUTPUT_SCHEMA
-
-PROMPT_VERSION = "1"
-DEFAULT_TEMPERATURE = 0.2
+PROMPT_VERSION = "2"
+DEFAULT_TEMPERATURE = 0.4
 
 SYSTEM_PROMPT = """\
-You are the narration renderer of a football match-analysis system. You turn a causal account,
-which another system has already computed, into short, clear sentences for a fan. You are a
-renderer, not an analyst: the account is the only truth, and it is complete.
+You are the Storyteller of a football match-analysis system. Another system has already computed
+what happened and why, and an Analyst has chosen how to tell it: an ordered list of beats. You
+write each beat as connected, natural English a fan follows, like a sharp TV analyst talking over
+the replay. You are a writer, not an analyst: the brief is the only truth, and it is complete.
 
 Rules, all mandatory:
-1. Use ONLY the account you are given. Never introduce any event, player, team, place, cause,
-   tactic, time, position, statistic or number that is not in it. Do not use outside knowledge
-   about football, these teams or these players. If the account does not say it, do not say it.
-2. Write exactly one sentence per contribution, in the order given by "order" (the headline
-   first, then the rest by rank). For each, set contribution_id, copy one of that contribution's
-   "refs" exactly into "ref", and copy its "role" exactly.
-3. Refer to players by their "player_name" (optionally with their player_id) and to teams by the
-   names given. Name no other person, team or place.
-4. Numbers: you may state a number only if it appears in the account (effect, a metric, the
-   outcome value, a counterfactual value or completion probability), written to at most three
-   decimals or as a percentage of the same value. Put the one number a sentence relies on in
-   "metric" with its name ("effect", a key of that contribution's "metrics", or "outcome_value").
-   A sentence may state no number (metric null).
-5. Meaning of the fields: "effect" is how much that fact changed the attacking team's chance of
-   the outcome (positive helped the attack, negative hurt it). "role" says what the fact was
-   (assist, build_up, space_creation, defensive_error, primary_cause, prevention, ...); "label"
-   names the action or movement. Describe them in plain words; do not invent detail about how
-   it happened beyond the label, role and numbers.
-6. Framing: if outcome.framing is "prevented", the story is a goal that didn't happen: the
-   headline is what stopped the chance. Never say or imply that it was scored. If outcome.scored
-   is false, never say the shot was scored, converted or went in.
-   If "realized", the headline is the main reason the defending side failed to stop it
-   (or, if there is none, the main creator).
-7. "headline_text" is one plain line about the headline contribution, under the same rules.
-8. If a contribution has a counterfactual, you may mention the better option it lists, with its
-   value, in that contribution's sentence.
+1. Tell exactly the beats given, in order, one passage per beat (one or two sentences), copying
+   each beat_id. Also write a one-line headline.
+2. Every beat has two registers. "text" (analyst) may weave in at most one number from that
+   beat's own record, as meaning ("well above their usual 9 m"), never as the point of the
+   sentence. "fan" has no numbers and no jargon (no xG, xT, VAEP, pitch control, probability,
+   effect) and must still explain.
+3. Name only the players in that beat's "may_name", and the two teams. No other person, team,
+   place, tactic, body part, direction or detail that is not in the beat's record.
+4. Never connect two players' actions causally ("dragged", "ran past", "opened", "because",
+   "left the space") unless the beat carries_a_computed_link; then say exactly what the link says.
+5. Keep the story connected: each beat follows from the one before. Do not repeat the same idea
+   as a title, then a subtitle, then a gloss; say it once, well.
+6. If outcome.scored is false, never say or imply the shot went in.
+7. The "draft" of each beat is a correct telling. Improve its language; do not add to its facts.
 Return only the JSON object required by the schema.
 """
 
 
 class FoundryUnavailable(RuntimeError):
-    """Foundry is not configured or not reachable; narrate falls back to the template."""
+    """Foundry is not configured or not reachable; narrate falls back to the composer."""
 
 
 @dataclass(frozen=True)
@@ -91,16 +75,66 @@ class FoundryConfig:
         return cls(endpoint, deployment, None if raw in ("", "none") else float(raw))
 
 
+def foundry_client(config: FoundryConfig) -> Any:
+    """An Agent Framework chat client on the Foundry project (imported lazily: the composer needs none of it)."""
+    try:
+        from agent_framework.foundry import FoundryChatClient
+        from azure.identity import DefaultAzureCredential
+    except ImportError as e:  # pragma: no cover - depends on the optional extra
+        raise FoundryUnavailable(f"install the agents extra (pip install -e .[agents]): {e}") from e
+    return FoundryChatClient(project_endpoint=config.endpoint, model=config.deployment,
+                             credential=DefaultAzureCredential())
+
+
+def run_sync(coro: Any) -> Any:
+    """Await ``coro`` from sync code, also when an event loop is already running (an MCP server's tool call)."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with ThreadPoolExecutor(1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+def run_structured(client: Any, name: str, instructions: str, message: str, schema: type,
+                   temperature: float | None, tools: list[Any] | None = None) -> dict[str, Any]:
+    """One Agent Framework agent turn constrained to ``schema`` (a pydantic model); returns the parsed JSON.
+
+    ``tools``: Agent Framework tools for the turn (e.g. an ``MCPStdioTool``), connected for its duration.
+    """
+    from contextlib import AsyncExitStack
+
+    from agent_framework import Agent
+
+    options: dict[str, Any] = {"response_format": schema}
+    if temperature is not None:
+        options["temperature"] = temperature
+
+    async def turn() -> Any:
+        async with AsyncExitStack() as stack:
+            for tool in tools or ():
+                if hasattr(tool, "__aenter__"):
+                    await stack.enter_async_context(tool)
+            agent = Agent(client=client, instructions=instructions, name=name, tools=tools or None)
+            return await agent.run(message, options=options)
+
+    response = run_sync(turn())
+    text = response.text
+    if not text:
+        raise ValueError(f"{name}: empty model output")
+    return json.loads(text)
+
+
 def user_message(brief: dict[str, Any], feedback: Sequence[str] = ()) -> str:
-    msg = "Narrate this causal account.\n\nACCOUNT:\n" + json.dumps(brief, indent=1, ensure_ascii=False)
+    msg = "Tell this story.\n\nBRIEF:\n" + json.dumps(brief, indent=1, ensure_ascii=False)
     if feedback:
-        msg += ("\n\nYour previous narration of this account was REJECTED by the grounding check for these "
-                "reasons. Fix every one; change nothing else about the rules:\n- " + "\n- ".join(feedback))
+        msg += ("\n\nYour previous telling was REJECTED by the Critic for these reasons. Fix every one; "
+                "change nothing else about the rules:\n- " + "\n- ".join(feedback))
     return msg
 
 
-class FoundryRenderer:
-    """Calls a Foundry model deployment. ``client`` (an OpenAI-compatible client) is injectable for tests."""
+class FoundryStoryteller:
+    """Tells a brief with a Foundry model. ``client`` (an Agent Framework chat client) is injectable for tests."""
 
     def __init__(self, config: FoundryConfig, client: Any | None = None):
         self.config = config
@@ -112,27 +146,12 @@ class FoundryRenderer:
 
     def client(self) -> Any:
         if self._client is None:
-            from azure.ai.projects import AIProjectClient
-            from azure.identity import DefaultAzureCredential
-
-            project = AIProjectClient(endpoint=self.config.endpoint, credential=DefaultAzureCredential())
-            self._client = project.get_openai_client()
+            self._client = foundry_client(self.config)
         return self._client
 
     def render(self, brief: dict[str, Any], feedback: Sequence[str] = ()) -> dict[str, Any]:
         """One generation. Returns the parsed JSON object (unvalidated)."""
-        kwargs: dict[str, Any] = {
-            "model": self.config.deployment,
-            "instructions": SYSTEM_PROMPT,
-            "input": user_message(brief, feedback),
-            "text": {"format": {"type": "json_schema", "name": "narration", "schema": MODEL_OUTPUT_SCHEMA,
-                                "strict": True}},
-            "store": False,
-        }
-        if self.config.temperature is not None:
-            kwargs["temperature"] = self.config.temperature
-        response = self.client().responses.create(**kwargs)
-        text = response.output_text
-        if not text:
-            raise ValueError(f"empty model output (status {getattr(response, 'status', '?')})")
-        return json.loads(text)
+        from replay_room.explain.schema import StoryOutput
+
+        return run_structured(self.client(), "Storyteller", SYSTEM_PROMPT, user_message(brief, feedback),
+                              StoryOutput, self.config.temperature)

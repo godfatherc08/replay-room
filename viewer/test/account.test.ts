@@ -61,12 +61,11 @@ describe("number discipline", () => {
     }
   });
 
-  it("Fan swaps a caption that quotes a metric for the plain line", () => {
+  it("Fan always takes the fan telling, even if an analyst caption were plain", () => {
     const b = fixture();
-    const step = { ...b.story[0], caption: "Sam Adeyemi: pass, build up, effect +0.087." };
+    const step = { ...b.story[0], caption: "Sam Adeyemi's pass, by VAEP +0.087." };
     expect(stepCaption(step, "analyst")).toBe(step.caption);
     expect(stepCaption(step, "fan")).toBe(step.plain);
-    expect(stepCaption(b.story[0], "fan")).toBe(b.story[0].caption); // Foundry's plain sentence stays
   });
 
   it("the decision compares chosen and better on one scale, names players, values in Analyst only", () => {
@@ -78,7 +77,7 @@ describe("number discipline", () => {
     expect(fan.better.fraction).toBe(1);
     expect(fan.chosen.fraction).toBeCloseTo(cf.chosen_value / cf.alternatives[0].value);
     expect(fan.chosen.metric).toBeNull();
-    expect(decisionView(b, cf, "analyst").better.metric).toBe("option value 0.206 · completion 0.94");
+    expect(decisionView(b, cf, "analyst").better.metric).toBe("option value 0.169 · completion 0.77");
   });
 });
 
@@ -90,7 +89,36 @@ describe("story steps", () => {
     expect(stepPlayers(b, byKind("counterfactual"))).toEqual(["EPA-08", "EPA-09"]);
     const first = b.story[0];
     expect(stepPlayers(b, first)[0]).toBe(b.account.contributions.find((c) => c.contribution_id === first.contribution_id)!.player_id);
-    const head = b.story.find((s) => s.contribution_id === b.account.headline_contribution_id && s.kind === "contribution")!;
+    const head = b.story.find((s) => s.emphasis === "lead")!;
+    expect(head.contribution_id).toBe(b.account.headline_contribution_id);
     expect(stepView(b, head, "fan").headline).toBe(true);
+  });
+
+  it("tell the flaw through its computed link, and context as here vs usually", () => {
+    const b = fixture();
+    const flaw = b.story.find((s) => s.kind === "flaw")!;
+    expect(flaw.link_id).toBe("LNBR-05");
+    expect(stepPlayers(b, flaw)).toEqual(["NBR-05", "EPA-11"]); // Novak, then the runner Ferraro
+    const fv = stepView(b, flaw, "analyst");
+    expect(fv.chip).toBe("How the chance came");
+    expect(fv.gloss).toBe("beaten by a run into the space");
+    const ctx = b.story.find((s) => s.kind === "context")!;
+    expect(stepPlayers(b, ctx)).toEqual([]);
+    const analyst = stepView(b, ctx, "analyst");
+    expect(analyst.meters.map((m) => m.label)).toEqual(["Here", "Usually"]);
+    expect(analyst.meters[0].metric).toBe("16.3 m");
+    expect(analyst.meters[1].metric).toMatch(/^9\.2 m · usual 5\.7 m–11\.4 m · medium confidence, \d+ samples$/);
+    const fan = stepView(b, ctx, "fan");
+    expect(fan.caption).toBe("Northbridge's back line is standing much higher than usual.");
+    expect(fan.meters.every((m) => m.metric === null)).toBe(true);
+  });
+
+  it("caption in the register: the analyst telling, or the fan telling with no numbers", () => {
+    const b = fixture();
+    for (const s of b.story) {
+      expect(stepCaption(s, "analyst")).toBe(s.caption);
+      expect(stepCaption(s, "fan")).toBe(s.plain);
+      expect(stepCaption(s, "fan")).not.toMatch(/\d/);
+    }
   });
 });

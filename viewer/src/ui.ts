@@ -7,6 +7,9 @@
 //
 // Every word and number shown is a field of the bundle (account, meaning, story, narration, match info);
 // a slot the bundle has nothing for (no narration, no counterfactual) is left out, never filled in.
+//
+// Keys: Space plays / pauses (the story, or the replay in Explore) and never scrolls the page; Left / Right
+// step between beats (Story) or facts (Explore). Typing in a field is left alone.
 
 import type { IndexEntry } from "./bundle";
 import type { View, Viewer } from "./controller";
@@ -34,6 +37,14 @@ export interface UIOptions {
   stage?: StageControls;
   mode?: Mode;
   view?: View;
+  keys?: EventTarget; // where keyboard shortcuts listen (default: window)
+}
+
+/** Keys the viewer owns: Space (play / pause), Left / Right (previous / next beat or fact). */
+export function isTyping(target: EventTarget | null): boolean {
+  if (!target || typeof (target as HTMLElement).tagName !== "string") return false;
+  const t = target as HTMLElement;
+  return t.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName);
 }
 
 export interface UIHandle {
@@ -95,6 +106,34 @@ export function buildUI(roots: UIRoots, viewer: Viewer, opts: UIOptions = {}): U
     stage.render();
     panel.mark();
   });
+
+  const keys = opts.keys ?? (typeof window !== "undefined" ? window : null);
+  const isSpace = (e: KeyboardEvent) => e.key === " " || e.code === "Space" || e.key === "Spacebar";
+  keys?.addEventListener("keydown", (ev) => {
+    const e = ev as KeyboardEvent;
+    if (e.altKey || e.ctrlKey || e.metaKey || isTyping(e.target)) return;
+    if (isSpace(e)) {
+      e.preventDefault(); // the page must not scroll, and a focused button must not also fire
+      if (e.repeat) return;
+      if (state.view === "story") story.toggle();
+      else clock.toggle();
+    } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const dir = e.key === "ArrowRight" ? 1 : -1;
+      if (state.view === "story") {
+        if (story.index < 0) story.goto(0);
+        else if (dir > 0) story.next();
+        else story.prev();
+      } else {
+        viewer.stepEvidence(dir);
+        panel.mark();
+      }
+    }
+  }, { capture: true });
+  keys?.addEventListener("keyup", (ev) => {
+    const e = ev as KeyboardEvent;
+    if (isSpace(e) && !isTyping(e.target)) e.preventDefault(); // buttons activate on keyup
+  }, { capture: true });
 
   const sync = () => {
     top.sync();
