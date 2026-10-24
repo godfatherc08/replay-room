@@ -32,6 +32,7 @@ class Candidate:
     effect: float  # change in the attacking team's P(outcome)
     evidence: tuple[EventRef | FrameRef, ...]
     metrics: dict[str, float] = field(default_factory=dict)
+    span: tuple[int, int] | None = None  # off-ball: the frames (a, b) the rise in share was measured over
 
 
 def threat_at(xt: XTModel, x: float, y: float, attacking_home: bool) -> float:

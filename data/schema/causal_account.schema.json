@@ -376,6 +376,122 @@
       "title": "FrameRef",
       "type": "object"
     },
+    "Link": {
+      "additionalProperties": false,
+      "description": "A causal link behind a defensive flaw, measured on the tracking (never inferred).\n\nWho the defender was marking is the nearest-attacker assignment at the start\nof his fact's span; the runner is an attacker he moved with over that span;\n``zone`` names where the key event happened (the space his share was\nmeasured at); ``enabled`` is the first attacking action into that zone after\nthe span began. A link is emitted only when its geometric tests pass.",
+      "properties": {
+        "defender_contribution_id": {
+          "title": "Defender Contribution Id",
+          "type": "string"
+        },
+        "defender_id": {
+          "title": "Defender Id",
+          "type": "string"
+        },
+        "enabled": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "enabled_contribution_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enabled Contribution Id"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/FrameRef"
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "decoy_run",
+            "dragged_out",
+            "run_past",
+            "lost_man"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "link_id": {
+          "title": "Link Id",
+          "type": "string"
+        },
+        "marked_player_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Marked Player Id"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Metrics",
+          "type": "object"
+        },
+        "runner_contribution_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runner Contribution Id"
+        },
+        "runner_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runner Id"
+        },
+        "zone": {
+          "title": "Zone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "link_id",
+        "kind",
+        "defender_contribution_id",
+        "defender_id",
+        "zone",
+        "evidence"
+      ],
+      "title": "Link",
+      "type": "object"
+    },
     "Moment": {
       "additionalProperties": false,
       "properties": {
@@ -874,6 +990,14 @@
       "title": "Headline Contribution Id",
       "type": "string"
     },
+    "links": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Link"
+      },
+      "title": "Links",
+      "type": "array"
+    },
     "moment": {
       "$ref": "#/$defs/Moment"
     },
@@ -892,10 +1016,22 @@
       "$ref": "#/$defs/Provenance"
     },
     "schema_version": {
-      "const": "0.5",
-      "default": "0.5",
+      "const": "0.6",
+      "default": "0.6",
       "title": "Schema Version",
       "type": "string"
+    },
+    "supporting_contribution_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Supporting Contribution Id"
     },
     "teams": {
       "maxItems": 2,

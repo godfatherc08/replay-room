@@ -9,6 +9,7 @@ import pandas as pd
 
 from replay_room.attribution.counterfactual import COUNTERFACTUAL_MARGIN, counterfactual_for
 from replay_room.attribution.fuse import EFFECT_THRESHOLD, contributions, headline, select
+from replay_room.attribution.links import links_for
 from replay_room.attribution.off_ball import off_ball_candidates
 from replay_room.attribution.on_ball import on_ball_candidates
 from replay_room.attribution.outcome import outcome_of
@@ -57,11 +58,13 @@ def attribute(
     outcome = outcome_of(m, actions, action_values, meta, models.xt)
     key = by_id.loc[m.key_event_ref.action_id]
     candidates = on_ball_candidates(vm, actions, action_values, outcome, meta, models.xt)
-    candidates += off_ball_candidates(vm, frames, (float(key["start_x"]), float(key["start_y"])), outcome.value,
-                                      m.attacking_team_id == meta.home_team_id, keepers)
-    kept = select(candidates)
-    head = headline(kept, outcome, m.t_start, m.t_event)
+    spot = (float(key["start_x"]), float(key["start_y"]))
+    attacking_home = m.attacking_team_id == meta.home_team_id
+    candidates += off_ball_candidates(vm, frames, spot, outcome.value, attacking_home, keepers)
+    kept = select(candidates, outcome, m.t_start, m.t_event)
+    head, support = headline(kept, outcome, m.t_start, m.t_event)
     contribs = contributions(kept, head, outcome)
+    links = links_for(m, kept, frames, actions, spot, attacking_home, keepers)
 
     pressure = under_pressure(by_id, context)
     counterfactuals = []
@@ -80,6 +83,7 @@ def attribute(
     mentioned = {c.player_id for c in contribs} | {m.key_player_id}
     mentioned |= {p for c in contribs for r in c.evidence if r.kind == "frame" for p in r.player_ids}
     mentioned |= {a.target_player_id for cf in counterfactuals for a in cf.alternatives if a.target_player_id}
+    mentioned |= {p for link in links for p in link.player_ids}
     participants = []
     for team in (meta.home_team, meta.away_team):
         participants += [Participant(player_id=p.player_id, name=p.name, team_id=team.team_id,
@@ -90,13 +94,15 @@ def attribute(
     draft = dict(
         account_id=f"acc-{m.moment_id}", game_id=m.game_id, moment=m, outcome=outcome,
         teams=(teams[m.attacking_team_id], teams[m.defending_team_id]), participants=tuple(participants),
-        headline_contribution_id=head.key, contributions=contribs, counterfactuals=tuple(counterfactuals),
+        headline_contribution_id=head.key, supporting_contribution_id=support.key if support else None,
+        contributions=contribs, counterfactuals=tuple(counterfactuals), links=links,
         provenance=Provenance(pipeline_version=PIPELINE_VERSION, source=meta.source, models=vm.models,
                               effect_threshold=EFFECT_THRESHOLD, counterfactual_margin=COUNTERFACTUAL_MARGIN),
     )
     refs = [r for c in contribs for r in c.evidence]
     refs += [cf.decision_frame for cf in counterfactuals] + [r for cf in counterfactuals for a in cf.alternatives
                                                               for r in a.evidence]
+    refs += [r for link in links for r in (*link.evidence, *([link.enabled] if link.enabled else []))]
     evidence = EvidenceIndex(events=tuple(sorted({r.action_id for r in refs if r.kind == "event"})),
                              frames=tuple(sorted({r.frame_id for r in refs if r.kind == "frame"})))
     return CausalAccount(**draft, evidence=evidence)

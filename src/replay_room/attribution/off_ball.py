@@ -150,7 +150,7 @@ def off_ball_candidates(vm: ValuedMoment, frames: pd.DataFrame, spot: tuple[floa
                 player_id=pid, team_id=team, t=float(stamps[b]), effect=effect,
                 evidence=(FrameRef(frame_id=b, timestamp=float(stamps[b]), player_ids=(pid,)),
                           FrameRef(frame_id=a, timestamp=float(stamps[a]), player_ids=(pid,))),
-                metrics={"space_created": round(effect, 6), "speed": round(speed, 3), **metrics},
+                metrics={"space_created": round(effect, 6), "speed": round(speed, 3), **metrics}, span=(a, b),
             ))
             continue
         out.append(_conceded(pid, team, effect, a, b, pos, stamps, m.attacking_team_id, metrics, goalkeepers))
@@ -187,12 +187,12 @@ def _conceded(pid: str, team: str, effect: float, a: int, b: int, pos: pd.DataFr
         return Candidate(
             key=f"s{pid}", track="off_ball", kind="marking_break", role="defensive_error", label=signal,
             player_id=pid, team_id=team, t=float(stamps[decisive]), effect=effect, evidence=tuple(evidence),
-            metrics=metrics,
+            metrics=metrics, span=(a, b),
         )
     return Candidate(
         key=f"s{pid}", track="off_ball", kind="space_conceded", role="defensive_error", label="conceded_space",
         player_id=pid, team_id=team, t=float(stamps[b]), effect=effect,
         evidence=(FrameRef(frame_id=b, timestamp=float(stamps[b]), player_ids=(pid,)),
                   FrameRef(frame_id=a, timestamp=float(stamps[a]), player_ids=(pid,))),
-        metrics=metrics,
+        metrics=metrics, span=(a, b),
     )

@@ -1,4 +1,4 @@
-"""Causal-account contract (schema v0.5), per REPLAY_ROOM_TECHNICAL_SPEC.md section 4.
+"""Causal-account contract (schema v0.6), per REPLAY_ROOM_TECHNICAL_SPEC.md section 4.
 
 The causal account is the single contract between the deterministic core
 (stage 4, ``replay_room.attribution``, produces it) and everything downstream
@@ -44,7 +44,11 @@ Invariants enforced on construction:
 * every counterfactual points at an on-ball contribution, cites its decision
   frame, ranks alternatives best first, and beats the chosen option by at
   least ``provenance.counterfactual_margin``;
-* every player referenced is a participant, on one of the moment's two teams.
+* every player referenced is a participant, on one of the moment's two teams;
+* the supporting contribution, if any, exists and is not the headline;
+* every link points at an off-ball defending contribution (and at existing
+  contributions for its runner and the action it enabled) and cites frames in
+  the window.
 
 Versions: v0.2 embedded the shared ``contracts.moment.Moment`` (Build 2) and
 added ``period_id`` to event refs. v0.3 aligns with spec section 4: ``role``,
@@ -55,7 +59,11 @@ class-agnostic ``Moment`` (``type`` over explained + flagged classes,
 attributes over) and accepts only engine-eligible moments. v0.5 (Build 4)
 adds ``outcome``, the ``evidence`` index, roles ``prevention`` /
 ``attacking_error`` / ``defending``, kind ``chance_denied``, the in-window frame
-check, and makes ``generated_at`` optional so accounts are reproducible.
+check, and makes ``generated_at`` optional so accounts are reproducible. v0.6 adds the
+``supporting_contribution_id`` (the co-lead beat: the defensive flaw an attacking
+headline points at, or the attacking act that punished a defensive headline) and
+``links``: off-ball causal links computed from the tracking (whose run took a
+defender away from his man, which zone that opened, which action used it).
 
 The JSON Schema export lives at ``data/schema/causal_account.schema.json`` and
 is regenerated with ``python -m replay_room.contracts``.
@@ -72,7 +80,7 @@ from pydantic import Field, model_validator
 from replay_room.contracts.moment import Moment
 from replay_room.contracts.refs import EventRef, EvidenceRef, FrameRef, _Model
 
-SCHEMA_VERSION = "0.5"
+SCHEMA_VERSION = "0.6"
 
 
 ContributionKind = Literal[
@@ -199,6 +207,42 @@ class Counterfactual(_Model):
         return self.best.value - self.chosen_value
 
 
+LinkKind = Literal[
+    "decoy_run",  # an attacker's run took the defender with him, away from the man he was marking
+    "dragged_out",  # an attacker's run took the defender out of the zone the key event came from
+    "run_past",  # the defender left the zone and an attacker ran past him into it
+    "lost_man",  # no run to follow: the defender lost his man, who got closer to the zone
+]
+
+
+class Link(_Model):
+    """A causal link behind a defensive flaw, measured on the tracking (never inferred).
+
+    Who the defender was marking is the nearest-attacker assignment at the start
+    of his fact's span; the runner is an attacker he moved with over that span;
+    ``zone`` names where the key event happened (the space his share was
+    measured at); ``enabled`` is the first attacking action into that zone after
+    the span began. A link is emitted only when its geometric tests pass.
+    """
+
+    link_id: str
+    kind: LinkKind
+    defender_contribution_id: str
+    defender_id: str
+    marked_player_id: str | None = None  # None: no attacker within marking range at the start
+    runner_id: str | None = None
+    runner_contribution_id: str | None = None
+    zone: str
+    enabled: EventRef | None = None
+    enabled_contribution_id: str | None = None
+    metrics: dict[str, float] = Field(default_factory=dict)
+    evidence: tuple[FrameRef, ...] = Field(min_length=1)
+
+    @property
+    def player_ids(self) -> set[str]:
+        return {p for p in (self.defender_id, self.marked_player_id, self.runner_id) if p}
+
+
 class Provenance(_Model):
     pipeline_version: str
     source: str  # adapter that produced the input match
@@ -209,7 +253,7 @@ class Provenance(_Model):
 
 
 class CausalAccount(_Model):
-    schema_version: Literal["0.5"] = SCHEMA_VERSION
+    schema_version: Literal["0.6"] = SCHEMA_VERSION
     account_id: str
     game_id: str
     moment: Moment
@@ -217,8 +261,10 @@ class CausalAccount(_Model):
     teams: tuple[TeamInfo, TeamInfo]
     participants: tuple[Participant, ...] = Field(min_length=1)
     headline_contribution_id: str
+    supporting_contribution_id: str | None = None
     contributions: tuple[Contribution, ...] = Field(min_length=1)
     counterfactuals: tuple[Counterfactual, ...] = ()
+    links: tuple[Link, ...] = ()
     evidence: EvidenceIndex
     provenance: Provenance
 
@@ -241,6 +287,10 @@ class CausalAccount(_Model):
             raise ValueError("duplicate contribution_id")
         if self.headline_contribution_id not in ids:
             raise ValueError(f"headline {self.headline_contribution_id!r} is not a contribution")
+        if self.supporting_contribution_id is not None and (
+                self.supporting_contribution_id not in ids
+                or self.supporting_contribution_id == self.headline_contribution_id):
+            raise ValueError(f"supporting {self.supporting_contribution_id!r} must be a contribution other than the headline")
         primary = [c.contribution_id for c in self.contributions if c.role == "primary_cause"]
         if primary and primary != [self.headline_contribution_id]:
             raise ValueError("only the headline contribution may have role primary_cause")
@@ -257,6 +307,7 @@ class CausalAccount(_Model):
         mentioned = {c.player_id for c in self.contributions} | {self.moment.key_player_id}
         mentioned |= {a.target_player_id for cf in self.counterfactuals for a in cf.alternatives
                       if a.target_player_id}
+        mentioned |= {p for link in self.links for p in link.player_ids}
         if not mentioned <= players:
             raise ValueError(f"players not in participants: {sorted(mentioned - players)}")
         if not {p.team_id for p in self.participants} <= team_ids:
@@ -267,6 +318,15 @@ class CausalAccount(_Model):
         frames = [r for c in self.contributions for r in c.evidence if r.kind == "frame"]
         frames += [cf.decision_frame for cf in self.counterfactuals]
         frames += [r for cf in self.counterfactuals for a in cf.alternatives for r in a.evidence if r.kind == "frame"]
+        frames += [r for link in self.links for r in link.evidence]
+        by_id = {c.contribution_id: c for c in self.contributions}
+        for link in self.links:
+            d = by_id.get(link.defender_contribution_id)
+            if d is None or d.track != "off_ball" or d.team_id != self.moment.defending_team_id                     or d.player_id != link.defender_id:
+                raise ValueError(f"link {link.link_id} must point at the defender's off-ball contribution")
+            for cid in (link.runner_contribution_id, link.enabled_contribution_id):
+                if cid is not None and cid not in ids:
+                    raise ValueError(f"link {link.link_id} points at unknown contribution {cid!r}")
         if any(not w.frame_start <= r.frame_id <= w.frame_end for r in frames):
             raise ValueError(f"frame reference outside the moment window {w.frame_start}..{w.frame_end}")
         if self.evidence.model_dump() != self.evidence_index():
@@ -277,12 +337,18 @@ class CausalAccount(_Model):
     def headline(self) -> Contribution:
         return next(c for c in self.contributions if c.contribution_id == self.headline_contribution_id)
 
+    @property
+    def supporting(self) -> Contribution | None:
+        return next((c for c in self.contributions if c.contribution_id == self.supporting_contribution_id), None)
+
     def evidence_index(self) -> dict[str, tuple[int, ...]]:
         """Every cited record (the spec's ``evidence`` block): action ids and frame ids, sorted."""
         refs = [r for c in self.contributions for r in c.evidence]
         for cf in self.counterfactuals:
             refs.append(cf.decision_frame)
             refs += [r for a in cf.alternatives for r in a.evidence]
+        for link in self.links:
+            refs += [*link.evidence, *([link.enabled] if link.enabled else [])]
         return {
             "events": tuple(sorted({r.action_id for r in refs if r.kind == "event"})),
             "frames": tuple(sorted({r.frame_id for r in refs if r.kind == "frame"})),

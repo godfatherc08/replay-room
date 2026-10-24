@@ -50,20 +50,50 @@ def test_realized_goal(accounts):
     c = _by_id(a)
     assert c["a35"].role == "assist" and c["a35"].effect > EFFECT_THRESHOLD  # the key pass is a creator
     head = a.headline
-    # NBR-05 conceding space just before the shot leads NBR-04's larger but earlier lost ball (recency)
-    assert head.contribution_id == "sNBR-05" and head.role == "primary_cause" and head.track == "off_ball"
-    assert head.team_id == a.outcome.conceding_team_id and head.effect > 0
+    # a goal is told from the side that scored it: the key pass leads ...
+    assert head.contribution_id == "a35" and head.team_id == a.outcome.beneficiary_team_id and head.role == "assist"
+    # ... and points at the defensive flaw: NBR-05 conceding space just before the shot, over NBR-04's larger but
+    # earlier lost ball (recency)
+    support = a.supporting
+    assert support.contribution_id == "sNBR-05" and support.role == "defensive_error" and support.track == "off_ball"
+    assert not any(x.role == "primary_cause" for x in a.contributions)
     lost = c["a30"]
-    assert lost.role == "defensive_error" and lost.effect > head.effect and lost.rank < head.rank  # ranks unchanged
+    assert lost.role == "defensive_error" and lost.effect > support.effect and lost.rank < support.rank  # ranks kept
     m = a.moment
-    assert head.effect * recency(head.t, m.t_start, m.t_event) > lost.effect * recency(lost.t, m.t_start, m.t_event)
+    assert support.effect * recency(support.t, m.t_start, m.t_event) > lost.effect * recency(lost.t, m.t_start, m.t_event)
 
 
-def test_off_ball_lapse_can_be_the_headline(accounts):
+def test_a_goal_is_never_headlined_by_a_minor_failure(accounts):
+    a = accounts["SYN-0007-goal-3"]  # was headlined "Alex Hale, goalkick fail"
+    assert a.headline.contribution_id == "a127" and a.headline.team_id == a.outcome.beneficiary_team_id
+    assert a.headline.action == "interception"  # Larsen won the goal kick: the proximate, decisive act
+    assert a.supporting.action == "goalkick_fail" and a.supporting.role == "defensive_error"
+    for acc in accounts.values():
+        if acc.outcome.scored:
+            assert acc.headline.team_id == acc.outcome.beneficiary_team_id
+
+
+def test_off_ball_lapse_co_leads(accounts):
     a = accounts["SYN-0007-goal-2"]  # no lost ball: the move started at kick-off
-    head = a.headline
-    assert head.track == "off_ball" and head.role == "primary_cause" and head.kind == "space_conceded"
-    assert head.metrics["space_conceded"] == pytest.approx(head.effect, abs=1e-6)  # the claim carries its number
+    support = a.supporting
+    assert support.track == "off_ball" and support.kind == "space_conceded" and support.role == "defensive_error"
+    assert support.metrics["space_conceded"] == pytest.approx(support.effect, abs=1e-6)  # the claim carries its number
+
+
+def test_links_are_measured_not_inferred(accounts, match):
+    a = accounts["SYN-0007-goal-1"]
+    (link,) = a.links
+    assert (link.kind, link.defender_id, link.runner_id) == ("run_past", "NBR-05", "EPA-09")
+    assert link.defender_contribution_id == "sNBR-05" and link.runner_contribution_id == "sEPA-09"
+    assert link.enabled_contribution_id == "a35" and link.enabled.action_id == 35  # the key pass used the zone
+    assert link.metrics["spot_distance_end"] - link.metrics["spot_distance_start"] >= 2.0  # he left the zone
+    assert link.metrics["closest_approach"] <= 6.0  # the runner went right past him
+    for acc in accounts.values():
+        for link in acc.links:
+            d = _by_id(acc)[link.defender_contribution_id]
+            assert d.team_id == acc.outcome.conceding_team_id and d.track == "off_ball"
+            assert link.player_ids <= {p.player_id for p in acc.participants}
+    assert not accounts["SYN-0007-goal-3"].links  # no geometric pattern held: no link is asserted
 
 
 def test_turnover_to_shot(accounts, match):
@@ -126,11 +156,29 @@ def test_headline_weighs_effect_by_recency():
                       beneficiary_team_id="A", conceding_team_id="B")
     early = replace(_cand("early", 0.08, team="B"), t=11.0)
     late = replace(_cand("late", 0.03, team="B"), t=19.0)
-    creator = _cand("creator", 0.2)
+    creator = replace(_cand("creator", 0.04), t=19.0)
+    old_pass = replace(_cand("old", 0.2), t=10.0)
     assert recency(5.0, 10.0, 20.0) == RECENCY_FLOOR and recency(20.0, 10.0, 20.0) == 1.0
-    assert headline([early, late, creator], outcome, 10.0, 20.0).key == "late"  # 0.03 x 0.9 > 0.08 x 0.1
-    assert headline([early, creator], outcome, 10.0, 20.0).key == "early"  # a conceding failure still leads
-    assert headline([creator], outcome, 10.0, 20.0).key == "creator"
+    head, support = headline([early, late, creator, old_pass], outcome, 10.0, 20.0)
+    assert (head.key, support.key) == ("creator", "late")  # 0.04 x 0.9 > 0.2 x 0.1; 0.03 x 0.9 > 0.08 x 0.1
+    foul = replace(_cand("foul", 0.4, team="B"), t=20.0)  # outscores the attack by DEFENSIVE_LEAD: it leads
+    head, support = headline([foul, creator], outcome, 10.0, 20.0)
+    assert (head.key, support.key) == ("foul", "creator")
+    assert headline([early], outcome, 10.0, 20.0) == (early, None)
+    assert headline([creator], outcome, 10.0, 20.0) == (creator, None)
+
+
+def test_the_defensive_flaw_survives_the_cut():
+    from replay_room.contracts.causal_account import Outcome
+
+    ref = EventRef(action_id=9, original_event_id="e9", period_id=1, time_seconds=20.0)
+    outcome = Outcome(ref=ref, value=0.2, value_source="xg", scored=True, realized=True,
+                      beneficiary_team_id="A", conceding_team_id="B")
+    touches = [replace(_cand(f"t{i}", 0.05 + i / 1000), t=15.0) for i in range(TOP_K)]
+    flaw = replace(_cand("flaw", 0.02, team="B"), t=19.0)
+    assert "flaw" not in [c.key for c in select([*touches, flaw])]
+    kept = select([*touches, flaw], outcome, 10.0, 20.0)
+    assert len(kept) == TOP_K + 1 and kept[-1].key == "flaw"  # kept, ranked by |effect| as ever
 
 
 def test_every_contribution_is_bound(accounts, match):
@@ -208,6 +256,7 @@ def test_penalty_headline_is_the_foul(penalty_account):
     head = a.headline
     assert head.evidence[0] == a.moment.key_event_ref and head.evidence[0].original_event_id == "ev90001"
     assert (head.role, head.player_id, head.team_id) == ("primary_cause", "EPA-05", "EPA")
+    assert a.supporting is not None and a.supporting.team_id == "NBR"  # the act that punished it
     assert head.metrics["outcome_value"] == PENALTY_XG
     assert head.effect == pytest.approx(PENALTY_XG - head.metrics["xt_attacking"], abs=1e-6)
 
