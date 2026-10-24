@@ -283,3 +283,15 @@ def test_the_deep_passage_is_positional_and_checked(hero, hero_ctx, hero_plan):
     i = _beat(hero_plan, "flaw")
     bad["beats"][i]["deep"] = flaw.deep.replace("16.8 m", "6.2 m")  # an invented deviation
     assert any("6.2" in e for e in validate(bad, hero, hero_plan, hero_ctx))
+
+
+def test_a_beat_draws_only_its_own_marking(all_accounts, all_contexts):
+    from replay_room.explain.compose import beat_positions
+    from replay_room.framing import Facts
+
+    a, ctx = all_accounts["SYN-0007-turnover_to_shot-1"], all_contexts["SYN-0007-turnover_to_shot-1"]
+    plan, facts = rules_plan(a, ctx), Facts(a, ctx)
+    marking = {b.contribution_id: beat_positions(facts, ctx, b, facts.players(b))[2] for b in plan.beats
+               if b.contribution_id}
+    assert marking["sNBR-02"] is not None and not marking["sNBR-02"].held  # Sam Brandt loses Adeyemi: drawn red
+    assert marking["a12"] is None  # Novak's lost pass is on-ball: his off-ball marking is another beat's evidence

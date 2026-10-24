@@ -458,7 +458,16 @@ def beat_positions(facts: Facts, context: MatchContext | None, b: Beat, players:
     ordered = sorted(best.values(), key=lambda p: (rank.get(p.player_id, len(rank)), p.player_id))
     label = b.link_id or b.contribution_id
     swing = next((s for s in context.swings if s.label == label), None)
-    marking = next((m for m in context.markings if m.defender_id in players), None)
+    spans = set()  # the beat's own measured spans: a marking from another fact is not this beat's evidence
+    if b.link_id is not None:
+        k = facts.link(b.link_id)
+        spans.add((k.evidence[0].frame_id, k.evidence[-1].frame_id))
+    if b.contribution_id is not None:
+        frames = [r.frame_id for r in facts.contribution(b.contribution_id).evidence if r.kind == "frame"]
+        if frames:
+            spans.add((min(frames), max(frames)))
+    marking = next((m for m in context.markings if m.defender_id in players and (m.frame_from, m.frame_to) in spans),
+                   None)
     return ordered, swing, marking
 
 
