@@ -27,3 +27,18 @@ def test_every_tool_answers_with_its_contract(answers, all_accounts, all_context
     assert MatchContext.model_validate(answers["match_context"]) == all_contexts["SYN-0007-goal-1"]
     n = Narration.model_validate(answers["narrate"])
     assert n.source == "template" and n.moment_id == "SYN-0007-goal-1"
+
+
+def test_the_agents_reach_the_engine_over_mcp(fixture_dir, all_accounts, monkeypatch):
+    from replay_room.agents.engine import McpEngine
+    from replay_room.agents.orchestrator import Orchestrator
+    from replay_room.agents.sources import FixtureStream
+
+    monkeypatch.delenv("FOUNDRY_PROJECT_ENDPOINT", raising=False)
+    with McpEngine() as engine:  # opens one session, closes it cleanly from the same task
+        assert set(TOOLS) <= set(engine.tools)
+        orch = Orchestrator(engine, FixtureStream(fixture_dir), mode="template")
+        result = orch.explain("SYN-0007-goal-1")
+    assert result.account == all_accounts["SYN-0007-goal-1"]
+    assert any(s.action == "attribute (mcp (stdio))" for s in orch.trace)
+    assert set(result.editions) == {"analyst", "fan"}

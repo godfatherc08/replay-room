@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  engine:
+    name: Engine, agents and MCP server (Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[dev]" -c requirements-ci.txt
+      - name: "Tests (no model, no Azure: every agent runs on its deterministic floor)"
+        run: python -m pytest
+      - name: MCP smoke test (a client launches the engine server over stdio and calls every tool)
+        run: python -m replay_room.mcp_server.smoke
+      - name: Agents end to end (Scout menu -> Analyst -> Storyteller <-> Critic -> Editor)
+        run: python -m replay_room.agents --mode template --moment SYN-0007-big_chance_saved-3
+      - name: Export the viewer bundles
+        run: python -m replay_room.render data/fixtures/synthetic_match_01 --narration template
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles
+          path: data/accounts/
+
+  viewer:
+    name: Viewer (TypeScript)
+    runs-on: ubuntu-latest
+    needs: engine
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: viewer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundles
+          path: data/accounts/
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Build the static site (Azure Static Web Apps)
+        run: npx vite build

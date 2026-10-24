@@ -97,6 +97,13 @@ pyproject.toml
 6. **Lean 3D.** Markers and camera, not photorealism. Correctness of the account beats visual polish.
 7. **Keep it solo-sized.** Prefer local in-memory replay + ACA over heavyweight cloud wiring; add Azure services only when a stage actually needs them.
 
+## Agentic layer (around the core, never inside it)
+
+The engine computes facts and causal links; agents (`src/replay_room/agents/`) select, order, emphasize, verify
+and adapt them, and never author either. The Analyst's framing plan is ids only (`framing/`); the Critic is
+code (`framing.check_plan` + `explain.validate`); every model step has a deterministic floor. See
+`docs/adr/0001-agency-around-a-deterministic-core.md`. Engine changes belong to deterministic code only.
+
 ## Key references
 
 - VAEP — Decroos et al., *Actions Speak Louder than Goals*, KDD 2019 (SPADL + VAEP).
@@ -118,11 +125,16 @@ metrics:      python -m replay_room.metrics data/fixtures/synthetic_match_01 [--
 attribute:    python -m replay_room.attribution data/fixtures/synthetic_match_01 [--classes ...] [--json] [--save [DIR]]
               (one CausalAccount per engine-eligible moment; --save writes data/accounts/<game>/<moment>.json)
 render:       python -m replay_room.render data/fixtures/synthetic_match_01   (accounts + viewer bundles in data/accounts/)
-viewer:       cd viewer && npm install && npm run dev   (http://localhost:5173/?moment=<id>[&mode=fan][&step=<n>|&jump=<contribution>][&play=1]; npm test)
+viewer:       cd viewer && npm install && npm run dev   (http://localhost:5173/?moment=<id>[&mode=fan][&step=<n>|&jump=<contribution>][&play=1][&stadium=0]; npm test)
 shots:        cd viewer && npm run shots -- <outDir>   (dev server up; headless Edge screenshots of the hero moment's Story states)
 explain:      python -m replay_room.explain data/accounts/SYN-0007/<moment>.json [--mode foundry|template] [--refresh] [--json]
               (Foundry: pip install -e ".[foundry]", az login, FOUNDRY_PROJECT_ENDPOINT + FOUNDRY_MODEL_DEPLOYMENT;
-               unset or failing -> validated template fallback; live test: REPLAY_ROOM_FOUNDRY_IT=1 pytest tests/test_explain.py)
+               unset or failing -> the deterministic composer, Critic-checked; live test: REPLAY_ROOM_FOUNDRY_IT=1 pytest tests/test_explain.py)
+agents:       python -m replay_room.agents [--moment <id>] [--via-mcp] [--mode foundry|template] [--focus-team T]
+              [--focus-player P] [--language xx] [--json]   (Scout -> Analyst -> Storyteller <-> Critic -> Editor, with the trace)
+mcp server:   python -m replay_room.mcp_server [--http --port 8765]   (tools: detect_moments, attribute, match_context, narrate)
+mcp smoke:    python -m replay_room.mcp_server.smoke [--moment <id>]
+ci:           .github/workflows/ci.yml (pip install -e ".[dev]" -c requirements-ci.txt; pytest; smoke; agents; render; viewer)
 gen fixture:  python -m replay_room.ingest.generator --seed 7 --out data/fixtures/synthetic_match_01
 schema:       python -m replay_room.contracts      (regenerates data/schema/causal_account.schema.json)
 test:         python -m pytest

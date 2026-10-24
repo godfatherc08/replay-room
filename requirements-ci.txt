@@ -1,0 +1,13 @@
+# Constraints for CI: the versions the checked-in models (data/models) were trained and validated with.
+# Install with: pip install -e ".[dev]" -c requirements-ci.txt
+scikit-learn==1.9.1
+scipy==1.17.1
+joblib==1.6.0
+numpy==1.26.4
+pandas==2.3.3
+pandera==0.17.2
+multimethod==1.12
+socceraction==1.5.3
+pydantic==2.14.1
+mcp==2.3.0
+httpx==0.28.1

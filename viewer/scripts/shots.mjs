@@ -41,9 +41,11 @@ const at = await (async () => {
   return page.evaluate(() => {
     const s = window.replayRoom.bundle.story;
     const find = (f) => s.findIndex(f) + 1;
-    return { n: s.length, assist: find((x) => x.contribution_id === "a161" && x.kind === "build_up"),
-             flaw: find((x) => x.kind === "flaw"), context: find((x) => x.kind === "context"),
-             lead: find((x) => x.emphasis === "lead") };
+    const assist = find((x) => x.contribution_id === "a161" && x.kind === "build_up") || find((x) => x.kind === "build_up");
+    const b = window.replayRoom.bundle;
+    const off = b.account.contributions.find((c) => c.track === "off_ball") ?? b.account.contributions[0];
+    return { n: s.length, assist, flaw: find((x) => x.kind === "flaw"), context: find((x) => x.kind === "context"),
+             lead: find((x) => x.emphasis === "lead"), jump: off.contribution_id };
   });
 })();
 
@@ -68,7 +70,7 @@ await shot("f-analyst");
 await open(`step=${at.n}&mode=fan`, 3500);
 await shot("e2-fan-counterfactual");
 
-await open("jump=sEPA-11", 3000);
+await open(`jump=${at.jump}`, 3000);
 await shot("g-explore-jump");
 
 if (at.flaw) {

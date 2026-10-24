@@ -14,6 +14,7 @@ refused rather than passed on.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import os
 import sys
@@ -64,7 +65,11 @@ class InProcessEngine:
 
 
 class McpEngine:
-    """The engine over MCP (stdio). Use as a context manager, or call ``close()``."""
+    """The engine over MCP (stdio). Use as a context manager, or call ``close()``.
+
+    One long-lived task on a background event loop owns the client session (anyio requires a session to be
+    entered and exited in the same task) and serves the calls queued to it from the caller's thread.
+    """
 
     name = "mcp (stdio)"
 
@@ -78,19 +83,36 @@ class McpEngine:
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
         self._thread.start()
-        self._client = None
-        self._run(self._open())
-        self.tools = sorted(t.name for t in self._run(self._client.list_tools()).tools)
+        self._jobs: asyncio.Queue | None = None
+        ready: concurrent.futures.Future = concurrent.futures.Future()
+        self._served = asyncio.run_coroutine_threadsafe(self._serve(ready), self._loop)
+        ready.result(timeout=timeout_s)
+        self.tools = sorted(t.name for t in self._do(lambda c: c.list_tools()).tools)
 
-    async def _open(self) -> None:
-        self._client = self._client_cls(self._params, read_timeout_seconds=self._timeout)
-        await self._client.__aenter__()
+    async def _serve(self, ready: concurrent.futures.Future) -> None:
+        self._jobs = asyncio.Queue()
+        try:
+            async with self._client_cls(self._params, read_timeout_seconds=self._timeout) as client:
+                ready.set_result(None)
+                while (job := await self._jobs.get()) is not None:
+                    fn, fut = job
+                    try:
+                        fut.set_result(await fn(client))
+                    except Exception as e:  # handed back to the caller's thread
+                        fut.set_exception(e)
+        except BaseException as e:
+            if not ready.done():
+                ready.set_exception(e)
+            else:
+                raise
 
-    def _run(self, coro: Any) -> Any:
-        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
+    def _do(self, fn: Any) -> Any:
+        fut: concurrent.futures.Future = concurrent.futures.Future()
+        self._loop.call_soon_threadsafe(self._jobs.put_nowait, (fn, fut))
+        return fut.result(timeout=self._timeout)
 
     def call(self, tool: str, **arguments: Any) -> dict[str, Any]:
-        result = self._run(self._client.call_tool(tool, arguments))
+        result = self._do(lambda c: c.call_tool(tool, arguments))
         if result.is_error:
             raise RuntimeError(f"{tool}: " + " ".join(getattr(c, "text", "") for c in result.content))
         if result.structured_content is not None:
@@ -110,11 +132,9 @@ class McpEngine:
         return Narration.model_validate(self.call("narrate", moment_id=moment_id, mode=mode))
 
     def close(self) -> None:
-        if self._client is not None:
-            try:
-                self._run(self._client.__aexit__(None, None, None))
-            finally:
-                self._client = None
+        if self._jobs is not None and not self._served.done():
+            self._loop.call_soon_threadsafe(self._jobs.put_nowait, None)
+            self._served.result(timeout=30)
         self._loop.call_soon_threadsafe(self._loop.stop)
         self._thread.join(timeout=10)
 
