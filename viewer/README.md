@@ -52,6 +52,18 @@ What it shows:
   position gave up space worth +0.012 of a scoring chance at the shot spot"), the players and their roles,
   the frames, and the feed's own event ids (`ev00220`). All of it is the bundle's `proofs`, read off the
   account by the exporter; Fan shows the same proof in words, with the records but no metrics.
+* **Three layers of depth** (`docs/evidence-treatise.md`). L1, the claim: one line and its evidence status.
+  L2, the evidence (click the claim): the players, the frame, the exact measured number with its rank and
+  share ("VAEP +0.087: the largest of the 8 facts that built the chance, 58% of the 0.152 xG chance"), the
+  feed's event ids. L3, **Go deeper**: the deep passage (where each player stood against their average in
+  that phase, with its confidence; distances; the attacking team's pitch-control swing at the shooting spot;
+  a marking, held or broken) and, on the pitch, only that beat's positional evidence: the control surface
+  fading over the swing, average-position ghosts with deviation arrows, the marking in green or red, the key
+  distance. Each layer toggles from the legend; numbers on the pitch in Analyst only.
+* **The Match Timeline** (bottom): MATCH TIMELINE with `<current> / <total>`; Replay progress (the amber
+  play disc, the amber seek bar, Drag to seek, the speed); Match events, one dot per event of the window,
+  coloured by kind (pass / build-up, defensive error, shot / outcome) with its legend and ticks, a dot seeking
+  to its event and opening its proof; and the selected moment with its claim and outcome metric.
 * **The causal-chain ribbon** under the pitch: one node per beat with the role icon, a ring in the team's
   colour and a bar for the fact's normalized |effect| (green helped the chance, red cost it); the lead
   carries the accent ring, the defensive flaw a red one; computed links and context have their own icons;

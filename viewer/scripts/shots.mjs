@@ -104,6 +104,30 @@ if (at.flaw) {
   await page.waitForTimeout(800);
   await shot("v3-c2-evidence-open-fan");
 }
+// evidence treatise L3: Go deeper on the flaw (the control surface fading, ghosts, distances), both registers;
+// the timeline with an event selected; and a broken marking drawn red on another moment
+if (at.flaw) {
+  await open(`step=${at.flaw}`, 3500);
+  await page.locator(".rr-expand").click();
+  await page.waitForTimeout(800);
+  await shot("l3-a-deep-start");
+  await page.waitForTimeout(6000); // the swing has played: the surface shows its end
+  await shot("l3-b-deep-analyst");
+  await page.locator(".rr-modes .rr-seg-btn[data-value=fan]").click();
+  await page.waitForTimeout(1500);
+  await shot("l3-c-deep-fan");
+  await page.locator("#footer").screenshot({ path: join(out, "l3-d-timeline.png") });
+  await page.locator(".rr-tl-dot").nth(2).click();
+  await page.waitForTimeout(2500);
+  await shot("l3-e-timeline-event-selected");
+}
+await page.goto(`${base}?moment=SYN-0007-turnover_to_shot-1&step=1`);
+await page.waitForFunction(() => "replayRoom" in window, null, { timeout: 30000 });
+await page.waitForTimeout(3500);
+await page.locator(".rr-expand").click();
+await page.waitForTimeout(2500);
+await shot("l3-f-marking-broken");
+
 // v3 (d): the wide default framing of a step, and (e) two consecutive playback frames, 100 ms apart
 await open(`step=${at.assist}`, 3500);
 await shot("v3-d-wide-step");

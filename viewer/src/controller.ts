@@ -165,9 +165,15 @@ export class Viewer {
   /** Redraw the current step's overlays (its own drawing and any extra), e.g. when the deep view opens or closes. */
   redraw(): void {
     if (this.proof || this.view !== "story" || !this.story.current) return;
-    const overlays = [...stepOverlays(this.bundle, this.story.current, this.mode), ...this.extra(this.story.current)];
+    const step = this.story.current;
+    const extra = this.extra(step);
+    const overlays = [...stepOverlays(this.bundle, step, this.mode), ...extra];
     if (this.pending) this.pending = overlays;
     else this.scene.setOverlays(overlays);
+    // going deeper closes in on the beat's evidence; coming back frames the play wide again
+    const points = stepPlayers(this.bundle, step).map((p) => positionAt(this.bundle, p, step.frame_id))
+      .filter((p): p is Vec2 => p !== null);
+    this.scene.focus([...points, ...overlayPoints(extra.length ? extra : overlays)], extra.length ? REVEAL_FIT : undefined);
   }
 
   /** Analyst / Fan changes the words and numbers, never the facts: redraw what is up in the new register. */
