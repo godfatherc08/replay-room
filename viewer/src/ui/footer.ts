@@ -1,14 +1,21 @@
-// Footer: transport, speed, the timeline, and the match time.
+// The Match Timeline (docs/evidence-treatise.md §5.3): one dark panel, three tiers and the selected moment.
 //
-// In Story the transport plays the guided analysis (◀ / ▶ step through it, speed sets the dwell); in Explore
-// it plays the replay (◀ / ▶ jump between facts). The timeline has two rows: the match strip spans the
-// whole match with a marker per exported moment (click to open it) and the replayed window highlighted;
-// under it, the scrubber spans the window we have tracking for, with a marker per fact (click to jump).
+// 1. Header: MATCH TIMELINE, and the clock `<current> / <total>` (the replay position; the match length).
+// 2. Replay progress: the amber play / pause disc (in step with Space), the seek bar (amber = played, drag to
+//    seek) and the speed. In Story it plays the guided analysis; in Explore, the replay.
+// 3. Match events: one dot per event of the moment's window, placed at its time and coloured by its kind
+//    (pass / build-up, defensive error, shot / outcome; the exporter's `timeline` field), with the legend and
+//    window-scoped ticks. A dot seeks the replay to its event and, when the account cites it, opens its proof.
+// 4. Selected moment: the moment's time, its one-line claim (the telling's headline) and its outcome metric
+//    (Fan: the gloss only).
+//
+// Four colours and no more: amber owns progress; blue, orange and green are the event kinds.
 
-import { evidenceRows, matchClock } from "../account";
+import { matchClock, momentHeader, outcomeView } from "../account";
+import type { BundleEvent } from "../bundle";
 import type { Viewer } from "../controller";
 import { button, el, icon, mmss } from "./dom";
-import type { UIState } from "./state";
+import type { EvidenceKey, UIState } from "./state";
 
 export interface FooterHandle {
   sync(): void;
@@ -16,38 +23,48 @@ export interface FooterHandle {
 
 export const SPEEDS = [0.5, 1, 1.5, 2];
 
-function clockSeconds(text: string): number {
-  const [m, s] = text.split(":").map(Number);
-  return 60 * m + s;
-}
+export const EVENT_KINDS: [BundleEvent["timeline"], string][] = [
+  ["build_up", "Pass / build-up"],
+  ["defensive_error", "Defensive error"],
+  ["shot_outcome", "Shot / outcome"],
+];
 
 export interface FooterActions {
   onPick?: (momentId: string) => void;
   jump(id: string): void; // a fact, in Explore
-  afterJump(): void; // the viewer jumped by itself (◀ / ▶ in Explore)
+  afterJump(): void; // the viewer jumped by itself
   scrub(): void; // the user took the playhead: leave Story
+  evidence?(key: EvidenceKey): void; // open a fact's proof
 }
 
 export function buildFooter(root: HTMLElement, viewer: Viewer, state: UIState, actions: FooterActions): FooterHandle {
   const { bundle, clock, story } = viewer;
   root.replaceChildren();
+  const ts = bundle.frames.timestamps;
+  const t0 = ts[0];
+  const span = Math.max(ts[ts.length - 1] - t0, 1e-6);
+  const at = (t: number) => `${(100 * (Math.min(Math.max(t, t0), t0 + span) - t0)) / span}%`;
 
-  const transport = el("div", "rr-transport");
-  const prev = button("rr-step", "Previous step", icon("prev", 14));
-  const play = button("rr-play", "Play analysis", icon("play", 18));
-  const next = button("rr-step", "Next step", icon("next", 14));
-  const stepBy = (dir: 1 | -1) => {
-    if (state.view === "story") {
-      if (dir > 0) story.next();
-      else story.prev();
-      return;
-    }
-    viewer.stepEvidence(dir);
-    actions.afterJump();
-  };
-  prev.addEventListener("click", () => stepBy(-1));
-  next.addEventListener("click", () => stepBy(1));
+  // 1. header
+  const head = el("div", "rr-tl-head");
+  const now = el("span", "rr-tl-clock");
+  head.append(el("span", "rr-tl-title", "MATCH TIMELINE"), now);
+
+  // 2. replay progress
+  const progress = el("div", "rr-tl-row rr-tl-progress");
+  const play = button("rr-play", "Play analysis", icon("play", 16));
   play.addEventListener("click", () => (state.view === "story" ? story.toggle() : clock.toggle()));
+  const scrub = el("input", "rr-scrub");
+  scrub.type = "range";
+  scrub.min = "0";
+  scrub.max = String(clock.last);
+  scrub.step = "0.01";
+  scrub.setAttribute("aria-label", "Replay progress");
+  scrub.addEventListener("input", () => {
+    actions.scrub();
+    clock.pause();
+    clock.seekIndex(Number(scrub.value));
+  });
   const speed = el("select", "rr-speed");
   speed.setAttribute("aria-label", "speed");
   for (const s of SPEEDS) {
@@ -60,76 +77,90 @@ export function buildFooter(root: HTMLElement, viewer: Viewer, state: UIState, a
     story.setSpeed(Number(speed.value));
     clock.setSpeed(Number(speed.value));
   });
-  transport.append(prev, play, next, speed);
+  const progressLabels = el("div", "rr-tl-labels");
+  const right = el("span", "rr-tl-right");
+  right.append(el("span", "rr-tl-hint", "Drag to seek"), speed);
+  progressLabels.append(el("span", "rr-tl-label", "Replay progress"), right);
+  const progressBody = el("div", "rr-tl-body");
+  progressBody.append(progressLabels, scrub);
+  progress.append(play, progressBody);
 
-  // match strip
-  const timeline = el("div", "rr-timeline");
-  const strip = el("div", "rr-match-strip");
-  const total = bundle.match.duration_s;
-  const ts = bundle.frames.timestamps;
-  const w0 = bundle.match.period_offset_s + ts[0];
-  const w1 = bundle.match.period_offset_s + ts[ts.length - 1];
-  const win = el("div", "rr-strip-window");
-  win.style.left = `${(100 * w0) / total}%`;
-  win.style.width = `${(100 * (w1 - w0)) / total}%`;
-  strip.append(win);
-  for (const m of bundle.match_moments) {
-    const current = m.moment_id === bundle.account.moment.moment_id;
-    const mark = button(`rr-strip-mark rr-${m.realized ? "realized" : "prevented"}${current ? " rr-current" : ""}`,
-                        `${m.type.replace(/_/g, " ")} at ${m.match_clock}`, "");
-    mark.dataset.moment = m.moment_id;
-    mark.style.left = `${(100 * clockSeconds(m.match_clock)) / total}%`;
-    if (!current) mark.addEventListener("click", () => actions.onPick?.(m.moment_id));
-    strip.append(mark);
+  // 3. match events: the window's events, as they are
+  const events = el("div", "rr-tl-row rr-tl-events");
+  const eventLabels = el("div", "rr-tl-labels");
+  eventLabels.append(el("span", "rr-tl-label", "Match events"), el("span", "rr-tl-hint", "Select an event to jump to it"));
+  const track = el("div", "rr-tl-track");
+  const cited = new Map(bundle.account.contributions
+    .filter((c) => c.track === "on_ball" && c.evidence[0].kind === "event")
+    .map((c) => [(c.evidence[0] as { action_id: number }).action_id, c.contribution_id]));
+  for (const e of bundle.events.filter((x) => x.in_window)) {
+    const dot = button(`rr-tl-dot rr-ev-${e.timeline}`,
+                       `${e.original_event_id}: ${e.type.replace(/_/g, " ")} at ${matchClock(bundle, e.t)}`, "");
+    dot.dataset.event = e.original_event_id;
+    dot.dataset.kind = e.timeline;
+    dot.style.left = at(e.t);
+    dot.addEventListener("click", () => {
+      actions.scrub();
+      const id = cited.get(e.action_id);
+      if (id) {
+        actions.jump(id);
+        actions.evidence?.({ contribution: id });
+      } else {
+        clock.pause();
+        clock.seekFrame(e.frame_id);
+      }
+    });
+    track.append(dot);
   }
-
-  // window scrubber
-  const track = el("div", "rr-track");
-  const scrub = el("input", "rr-scrub");
-  scrub.type = "range";
-  scrub.min = "0";
-  scrub.max = String(clock.last);
-  scrub.step = "0.01";
-  scrub.setAttribute("aria-label", "timeline");
-  scrub.addEventListener("input", () => {
-    actions.scrub();
-    clock.pause();
-    clock.seekIndex(Number(scrub.value));
-  });
-  const span = Math.max(ts[ts.length - 1] - ts[0], 1e-6);
-  for (const r of evidenceRows(bundle)) {
-    const m = button(`rr-tl-marker ${r.headline ? "rr-headline" : r.positive ? "rr-pos" : "rr-neg"}`,
-                     `${r.number}. ${r.player}: ${r.gloss} (${r.clock})`, "");
-    m.dataset.id = r.id;
-    m.style.left = `${(100 * (Math.min(Math.max(r.t, ts[0]), ts[ts.length - 1]) - ts[0])) / span}%`;
-    m.addEventListener("click", () => actions.jump(r.id));
-    track.append(m);
+  const ticks = el("div", "rr-tl-ticks");
+  for (const f of [0, 0.25, 0.5, 0.75, 1]) {
+    const tick = el("span", undefined, matchClock(bundle, t0 + f * span));
+    tick.style.left = `${100 * f}%`;
+    ticks.append(tick);
   }
-  track.append(scrub);
-  const ends = el("div", "rr-ticks");
-  ends.append(el("span", undefined, matchClock(bundle, ts[0])), el("span", undefined, `of ${mmss(total)}`),
-              el("span", undefined, matchClock(bundle, ts[ts.length - 1])));
-  timeline.append(strip, track, ends);
+  const legend = el("div", "rr-tl-legend");
+  for (const [kind, label] of EVENT_KINDS) {
+    const item = el("span", "rr-tl-key");
+    item.append(el("span", `rr-tl-dot-key rr-ev-${kind}`), el("span", undefined, label));
+    legend.append(item);
+  }
+  const eventBody = el("div", "rr-tl-body");
+  eventBody.append(eventLabels, track, ticks, legend);
+  events.append(eventBody);
 
-  const readout = el("div", "rr-readout");
-  const now = el("strong", "rr-now");
-  readout.append(el("span", "rr-micro", "Match time"), now);
-  root.append(transport, timeline, readout);
+  // 4. the selected moment
+  const card = el("div", "rr-tl-card");
+  const renderCard = () => {
+    const h = momentHeader(bundle, state.mode);
+    const o = outcomeView(bundle, state.mode);
+    const top = el("div", "rr-tl-card-top");
+    top.append(el("span", "rr-tl-moment-icon", "◎"), el("span", "rr-tl-label", `Selected moment · ${h.clock}`));
+    const claim = el("p", "rr-tl-claim", h.description ?? o.result);
+    const metric = el("p", "rr-tl-metric", `${bundle.outcome_display.label}${o.metric ? ` · ${o.metric}` : ""}`);
+    card.replaceChildren(top, claim, metric);
+  };
+  renderCard();
+
+  root.append(head, progress, events, card);
 
   let shown = "";
+  let mode = state.mode;
   const sync = () => {
     const playing = state.view === "story" ? story.playing : clock.playing;
     const label = state.view === "story" ? (playing ? "Pause analysis" : "Play analysis") : playing ? "Pause" : "Play";
     if (label !== shown) {
-      play.innerHTML = icon(playing ? "pause" : "play", 18);
+      play.innerHTML = icon(playing ? "pause" : "play", 16);
       play.title = label;
       play.setAttribute("aria-label", label);
-      prev.title = state.view === "story" ? "Previous step" : "Previous fact";
-      next.title = state.view === "story" ? "Next step" : "Next fact";
       shown = label;
     }
+    if (state.mode !== mode) {
+      mode = state.mode;
+      renderCard();
+    }
     scrub.value = String(clock.pos);
-    now.textContent = matchClock(bundle, clock.time);
+    scrub.style.setProperty("--played", `${(100 * clock.pos) / Math.max(clock.last, 1)}%`);
+    now.textContent = `${matchClock(bundle, clock.time)} / ${mmss(bundle.match.duration_s)}`;
   };
   clock.onChange(sync);
   story.onChange(sync);

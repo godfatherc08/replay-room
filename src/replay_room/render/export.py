@@ -10,7 +10,8 @@ nothing that decides anything:
   object (players and the ball) its observed ``x, y, vx, vy`` per frame
   (``null`` where the object is missing from a frame; never filled in);
 * ``events``: the SPADL actions the viewer draws (the chain, the turnover, and
-  every action the account cites), each with the window frame it aligns with;
+  every action the account cites), each with the window frame it aligns with
+  and its Match Timeline kind (``timeline_kind``);
 * ``match``: teams, the score when the moment began, and the match clock
   (``period_offset_s`` turns a period time into elapsed match time);
 * ``goalkeepers``: the goalkeepers' player ids (drawn in a distinct colour);
@@ -129,6 +130,8 @@ def export_moment(account: CausalAccount, match: Match, narration: Narration, pl
             "start": [_r(r.start_x), _r(r.start_y)], "end": [_r(r.end_x), _r(r.end_y)],
         })
     event_frame = {e["action_id"]: (e["frame_id"], e["in_window"]) for e in events}
+    for e in events:
+        e["timeline"] = timeline_kind(e, account)
 
     jumps = []
     for c in account.contributions:
@@ -206,6 +209,24 @@ def beat_frame(beat: dict[str, Any], account: CausalAccount, jumps: list[dict[st
         frames = [r["frame_id"] for r in beat["refs"] if r["kind"] == "frame"]
         return frames[-1] if frames else event_frame[beat["refs"][0]["action_id"]][0]
     return frame_of[beat["contribution_id"]]
+
+
+SHOT_OR_SAVE = ("shot", "shot_freekick", "shot_penalty", "keeper_save", "keeper_claim", "keeper_punch",
+                "keeper_pick_up")
+
+
+def timeline_kind(e: dict[str, Any], account: CausalAccount) -> str:
+    """The Match Timeline's colour for an event, from the account: ``shot_outcome`` (a shot, a save, the terminal
+    action), ``defensive_error`` (the defending team's action that failed or that the account counts as helping
+    the attack), else ``build_up`` (the attacking team's passes, carries and regains)."""
+    if e["action_id"] == account.outcome.ref.action_id or e["type"] in SHOT_OR_SAVE:
+        return "shot_outcome"
+    if e["team_id"] == account.moment.defending_team_id:
+        helped = any(c.effect > 0 and c.track == "on_ball" and c.evidence[0].action_id == e["action_id"]
+                     for c in account.contributions)
+        if helped or e["result"] != "success":
+            return "defensive_error"
+    return "build_up"
 
 
 def story_steps(account: CausalAccount, narration: Narration, jumps: list[dict[str, Any]],

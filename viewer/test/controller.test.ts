@@ -262,7 +262,7 @@ describe("app shell", () => {
     expect(v.clock.frameId).toBe(Number(row.dataset.frame));
     expect(v.active).toBe(row.dataset.id);
     expect(row.classList.contains("rr-active")).toBe(true);
-    expect(roots.footer.querySelector(".rr-now")!.textContent).toBe(matchClock(v.bundle, v.clock.time));
+    expect(roots.footer.querySelector(".rr-tl-clock")!.textContent).toBe(`${matchClock(v.bundle, v.clock.time)} / 05:00`);
   });
 
   it("Space plays and pauses without scrolling the page; Left / Right step between beats", () => {
@@ -341,7 +341,7 @@ describe("app shell", () => {
     roots.side.querySelector<HTMLButtonElement>('.rr-row[data-id="a157"]')!.click();
     expect(v.proof).not.toBeNull();
     expect(roots.side.querySelector(".rr-evidence")!.textContent).toContain(
-      "Sam Adeyemi's pass raised Eastport Athletic's chance of scoring by 0.087 (VAEP).");
+      "Sam Adeyemi's pass raised Eastport Athletic's chance of scoring by 0.087 (VAEP): the largest of the 8 facts");
   });
 
   it("the chain is collapsed in Story and open in Explore", () => {
@@ -371,6 +371,40 @@ describe("app shell", () => {
     picker.value = b.match_moments.find((m) => m.moment_id !== b.account.moment.moment_id)!.moment_id;
     picker.dispatchEvent(new Event("change"));
     expect(picked).toHaveLength(1);
-    expect(roots.footer.querySelectorAll(".rr-strip-mark")).toHaveLength(b.match_moments.length);
+  });
+
+  it("the Match Timeline: header and clock, amber progress, one coloured dot per event, the selected moment", () => {
+    const { b, v, roots } = shell();
+    const f = roots.footer;
+    expect(f.querySelector(".rr-tl-title")!.textContent).toBe("MATCH TIMELINE");
+    expect(f.querySelector(".rr-tl-clock")!.textContent).toBe(`${matchClock(b, v.clock.time)} / 05:00`);
+    expect([...f.querySelectorAll(".rr-tl-label")].map((x) => x.textContent).slice(0, 2))
+      .toEqual(["Replay progress", "Match events"]);
+    expect([...f.querySelectorAll(".rr-tl-hint")].map((x) => x.textContent))
+      .toEqual(["Drag to seek", "Select an event to jump to it"]);
+    expect(f.querySelector<HTMLSelectElement>(".rr-speed")!.selectedOptions[0].textContent).toBe("1×");
+    const dots = [...f.querySelectorAll<HTMLButtonElement>(".rr-tl-dot")];
+    const inWindow = b.events.filter((e) => e.in_window);
+    expect(dots.map((d) => d.dataset.event)).toEqual(inWindow.map((e) => e.original_event_id)); // the real events, only
+    expect(dots.map((d) => d.dataset.kind)).toEqual(inWindow.map((e) => e.timeline));
+    expect(new Set(dots.map((d) => d.dataset.kind))).toEqual(new Set(["build_up", "shot_outcome"])); // hero: no error event
+    expect([...f.querySelectorAll(".rr-tl-key")].map((k) => k.textContent))
+      .toEqual(["Pass / build-up", "Defensive error", "Shot / outcome"]);
+    expect(f.querySelectorAll(".rr-tl-ticks span")).toHaveLength(5);
+    const card = f.querySelector(".rr-tl-card")!;
+    expect(card.querySelector(".rr-tl-label")!.textContent).toBe("Selected moment · 04:03");
+    expect(card.querySelector(".rr-tl-claim")!.textContent).toBe("Ferraro misses a good chance for Eastport.");
+    expect(card.querySelector(".rr-tl-metric")!.textContent).toBe("15% chance of scoring · xG 0.152");
+    // a cited event's dot seeks to it and opens its proof
+    const pass = dots.find((d) => d.dataset.event === "ev00220")!;
+    pass.click();
+    expect(v.proof).toBe(b.proofs.contributions.a161);
+    expect(v.clock.frameId).toBe(b.proofs.contributions.a161.focus_frame);
+    expect(roots.side.querySelector(".rr-evidence")).not.toBeNull();
+  });
+
+  it("the timeline's moment card drops the raw figure in Fan", () => {
+    const { roots } = shell(fixture(), { mode: "fan" });
+    expect(roots.footer.querySelector(".rr-tl-metric")!.textContent).toBe("15% chance of scoring");
   });
 });

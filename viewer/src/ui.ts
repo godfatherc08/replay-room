@@ -94,6 +94,7 @@ export function buildUI(roots: UIRoots, viewer: Viewer, opts: UIOptions = {}): U
     onPick: opts.onPick,
     jump,
     afterJump: () => panel.mark(),
+    evidence,
     scrub: () => {
       if (state.view !== "explore") state.setView("explore");
     },

@@ -121,6 +121,7 @@ export interface BundleEvent {
   t: number;
   frame_id: number;
   in_window: boolean;
+  timeline: "build_up" | "defensive_error" | "shot_outcome"; // the Match Timeline's colour, from the account
   start: [number, number];
   end: [number, number];
 }
