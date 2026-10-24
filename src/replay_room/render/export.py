@@ -29,6 +29,9 @@ nothing that decides anything:
   Each step carries its beat (kind, emphasis, the ids it tells), the frame
   the camera goes to, ``caption`` (the analyst register) and ``plain`` (the
   fan register: no numbers, no jargon);
+* ``proofs``: the evidence behind every fact (by contribution id) and every told beat (by beat id): the
+  players involved, the frames and events cited (with the feed's event ids), the measured number with its
+  meaning, and the frame to open it at (``render.proof``);
 * ``plan`` / ``context`` / ``editions``: the framing plan, the moment's match
   context, and the Editor's editions (by register) when the agents made them;
 * ``teams[].kit``: display colours by side (the feed has none);
@@ -58,6 +61,7 @@ from replay_room.contracts.plan import FramingPlan
 from replay_room.contracts.pitch import BALL_ID, PITCH_LENGTH, PITCH_WIDTH
 from replay_room.explain.schema import Narration
 from replay_room.ingest.loader import Match
+from replay_room.render.proof import proofs
 from replay_room.render.display import (KITS, contribution_display, match_clock, meaning, name_ids,
                                         outcome_display, score_before)
 from replay_room.metrics.pass_value import frame_ids_at
@@ -180,7 +184,8 @@ def export_moment(account: CausalAccount, match: Match, narration: Narration, pl
         "jumps": jumps,
         "meaning": meaning(account),
         "outcome_display": outcome_display(account),
-        "story": story_steps(account, narration, jumps, event_frame),
+        "story": (story := story_steps(account, narration, jumps, event_frame)),
+        "proofs": _proofs(account, match, context, story, jumps),
     }
 
 
@@ -214,6 +219,18 @@ def story_steps(account: CausalAccount, narration: Narration, jumps: list[dict[s
                       "frame_id": beat_frame(b, account, jumps, event_frame),
                       "caption": b["text"], "plain": b["fan"]})
     return steps
+
+
+def _proofs(account: CausalAccount, match: Match, context: MatchContext | None, story: list[dict[str, Any]],
+            jumps: list[dict[str, Any]]) -> dict[str, Any]:
+    """The proof of every fact and every told beat (``render.proof``), each with the frame the viewer opens it at."""
+    out = proofs(account, match.actions, match.meta, context, story)
+    frame_of = {j["contribution_id"]: j["frame_id"] for j in jumps}
+    for cid, p in out["contributions"].items():
+        p["focus_frame"] = frame_of[cid]
+    for step in story:
+        out["beats"][step["beat_id"]]["focus_frame"] = step["frame_id"]
+    return out
 
 
 def dumps(bundle: dict[str, Any]) -> str:

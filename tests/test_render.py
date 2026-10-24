@@ -219,3 +219,37 @@ def test_story_plays_the_plan_in_both_registers(bundles):
     flaw = next(s for s in hero if s["kind"] == "flaw")
     assert flaw["link_id"] == "LNBR-05" and flaw["frame_id"] == 2419  # the link's end: the gap at its widest
     assert hero[-1]["plain"] == "Instead of the pass to Ferraro, Hale had a better option: a pass to Adeyemi."
+
+
+def test_every_claim_carries_its_proof_from_the_account(bundles, match):
+    feed_ids = set(match.actions["original_event_id"])
+    for b in bundles.values():
+        a = b["account"]
+        frames = set(b["frames"]["frame_ids"])
+        cited_events = set(a["evidence"]["events"])
+        cited_frames = set(a["evidence"]["frames"])
+        cited_frames |= {r["frame_id"] for f in b["context"]["facts"] for r in f["evidence"] if r["kind"] == "frame"}
+        people = {p["player_id"] for p in a["participants"]}
+        proofs = b["proofs"]
+        assert set(proofs["contributions"]) == {c["contribution_id"] for c in a["contributions"]}
+        assert set(proofs["beats"]) == {s["beat_id"] for s in b["story"]}
+        for p in [*proofs["contributions"].values(), *proofs["beats"].values()]:
+            assert p["focus_frame"] in frames and p["measured"]
+            for e in p["events"]:  # real records only: the account cites them, the feed has them
+                assert e["original_event_id"] in feed_ids
+                assert e["action_id"] in cited_events or e["action_id"] == a["outcome"]["ref"]["action_id"]
+            for f in p["frames"]:
+                assert f["frame_id"] in cited_frames
+            assert {x["player_id"] for x in p["players"]} <= people
+            for m in p["measured"]:
+                assert m["statement"] and m["plain"] and not any(ch.isdigit() for ch in m["plain"])
+    hero = bundles["SYN-0007-big_chance_saved-3"]
+    flaw = next(s for s in hero["story"] if s["kind"] == "flaw")
+    p = hero["proofs"]["beats"][flaw["beat_id"]]
+    assert [(x["name"], x["role"]) for x in p["players"]] == [
+        ("Jordan Novak", "defender"), ("Jordan Ferraro", "runner"), ("Robin Hale", "used the space")]
+    assert [f["frame_id"] for f in p["frames"]] == [2354, 2419] and p["focus_frame"] == 2419
+    assert [e["original_event_id"] for e in p["events"]] == ["ev00220"]
+    assert "space worth +0.012 of a scoring chance" in p["measured"][1]["statement"]
+    a157 = hero["proofs"]["contributions"]["a157"]["measured"][0]
+    assert a157["statement"] == "Sam Adeyemi's pass raised Eastport Athletic's chance of scoring by 0.087 (VAEP)."
