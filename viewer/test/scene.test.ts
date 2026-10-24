@@ -23,6 +23,25 @@ describe("PitchScene (headless)", () => {
     scene.render();
   });
 
+  it("puts the pitch in a stadium only when asked, and keeps it out of picking", () => {
+    const b = fixture();
+    expect(new PitchScene(new NullEngine(), b, { labels: false }).stadium).toHaveLength(0);
+    const scene = new PitchScene(new NullEngine(), b, { labels: false, stadium: true });
+    const names = scene.stadium.map((m) => m.name);
+    for (const side of ["north", "south", "east", "west"]) expect(names).toContain(`stand-${side}`);
+    expect(names.filter((n) => n.startsWith("tower"))).toHaveLength(4);
+    expect(names).toContain("sky");
+    expect(scene.stadium.every((m) => !m.isPickable)).toBe(true);
+    // the stands start beyond the apron: nothing overlaps the field of play
+    for (const m of scene.stadium.filter((x) => x.name.startsWith("stand-"))) {
+      const box = m.getBoundingInfo().boundingBox;
+      const clearX = box.minimumWorld.x > b.pitch.length / 2 || box.maximumWorld.x < -b.pitch.length / 2;
+      const clearZ = box.minimumWorld.z > b.pitch.width / 2 || box.maximumWorld.z < -b.pitch.width / 2;
+      expect(clearX || clearZ).toBe(true);
+    }
+    scene.render();
+  });
+
   it("rings the focus, dims everyone else, and draws the jump", () => {
     const b = fixture();
     const scene = new PitchScene(new NullEngine(), b, { labels: false });

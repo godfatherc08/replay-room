@@ -150,7 +150,8 @@ describe("app shell", () => {
     expect(roots.stage.querySelector<HTMLElement>(".rr-step-card")!.hidden).toBe(true);
     expect(card.querySelector(".rr-class-chip")!.textContent).toBe("BIG CHANCE SAVED");
     expect(card.querySelector(".rr-display")!.textContent).toBe("A goal that didn't happen");
-    expect(card.querySelector(".rr-lede")!.textContent).toBe(b.narration.headline);
+    expect(card.querySelector(".rr-lede")!.textContent).toBe("Ferraro misses a good chance for Eastport."); // no repeat
+    expect(b.narration.headline).toBe("A goal that didn't happen: Ferraro misses a good chance for Eastport.");
     expect(card.querySelector(".rr-cta")!.textContent).toBe("Play analysis");
   });
 
@@ -161,7 +162,7 @@ describe("app shell", () => {
     const card = roots.stage.querySelector<HTMLElement>(".rr-step-card")!;
     expect(card.hidden).toBe(false);
     expect(card.querySelector(".rr-caption")!.textContent).toBe(b.story[0].caption);
-    expect(card.querySelector(".rr-gloss")!.textContent).toBe(b.meaning.find((m) => m.contribution_id === b.story[0].contribution_id)!.gloss);
+    expect(card.querySelector(".rr-gloss")!.textContent).toBe("Helped the chance");
     expect(card.querySelectorAll(".rr-meter")).toHaveLength(1);
     expect(card.querySelector(".rr-counter")!.textContent).toBe(`Step 1 of ${b.story.length}`);
     run(v, 3.2);

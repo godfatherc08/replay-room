@@ -100,10 +100,12 @@ describe("story steps", () => {
     expect(flaw.link_id).toBe("LNBR-05");
     expect(stepPlayers(b, flaw)).toEqual(["NBR-05", "EPA-11"]); // Novak, then the runner Ferraro
     const fv = stepView(b, flaw, "analyst");
-    expect(fv.chip).toBe("How the chance came");
+    expect(fv.chip).toBe("Computed link"); // the caption already says it is the flaw
     expect(fv.gloss).toBe("beaten by a run into the space");
+    expect(fv.meters[0].label).toBe("Helped the chance"); // the meter does not repeat the caption
     const ctx = b.story.find((s) => s.kind === "context")!;
     expect(stepPlayers(b, ctx)).toEqual([]);
+    expect(stepView(b, ctx, "fan").title).toBe("Back line height");
     const analyst = stepView(b, ctx, "analyst");
     expect(analyst.meters.map((m) => m.label)).toEqual(["Here", "Usually"]);
     expect(analyst.meters[0].metric).toBe("16.3 m");

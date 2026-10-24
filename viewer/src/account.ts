@@ -179,20 +179,24 @@ const LINK_GLOSS: Record<Link["kind"], string> = {
   lost_man: "lost the man into the zone",
 };
 
-const CONTEXT_GLOSS: Record<ContextFact["kind"], string> = {
-  line_height: "back line, metres from goal",
-  marking_distance: "room for the attackers, metres to a defender",
-  counter_press: "winning the ball straight back",
+const CONTEXT_TITLE: Record<ContextFact["kind"], string> = {
+  line_height: "Back line height",
+  marking_distance: "Room for the attackers",
+  counter_press: "Winning the ball back",
 };
+
+/** A fact step's meter says only which way and how much (the caption already says what happened). */
+const direction = (positive: boolean) => (positive ? "Helped the chance" : "Cost the chance");
 
 function participant(bundle: Bundle, id: string): string {
   return bundle.account.participants.find((p) => p.player_id === id)?.name ?? id;
 }
 
-function flawChip(bundle: Bundle, step: StoryStep): string | null {
+/** One chip at most, and never a repeat of the caption: the lead is the key moment; a beat told through a link
+ *  the engine measured says so. A flaw's caption already says it is the flaw. */
+function chipFor(step: StoryStep): string | null {
   if (step.emphasis === "lead") return "Key moment";
-  if (step.kind === "flaw") return bundle.account.outcome.realized ? "Where it went wrong" : "How the chance came";
-  if (step.kind === "punish") return "Punished";
+  if (step.link_id) return "Computed link";
   return null;
 }
 
@@ -205,8 +209,8 @@ export function stepView(bundle: Bundle, step: StoryStep, mode: Mode): StepView 
     const c = contribution(bundle, step.contribution_id!);
     const m = meaningOf(bundle, c.contribution_id);
     const gloss = step.link_id ? LINK_GLOSS[linkOf(bundle, step.link_id).kind] : m.gloss;
-    return { ...base, title: participant(bundle, c.player_id), teamId: c.team_id, gloss, chip: flawChip(bundle, step),
-             meters: [{ label: gloss, fraction: m.magnitude, tone: m.positive ? "pos" : "neg",
+    return { ...base, title: participant(bundle, c.player_id), teamId: c.team_id, gloss, chip: chipFor(step),
+             meters: [{ label: direction(m.positive), fraction: m.magnitude, tone: m.positive ? "pos" : "neg",
                         metric: analyst ? metricText(bundle, c.contribution_id) : null }] };
   }
   if (step.kind === "link") {
@@ -215,7 +219,7 @@ export function stepView(bundle: Bundle, step: StoryStep, mode: Mode): StepView 
     const away = k.metrics.spot_distance_end;
     return { ...base, title: participant(bundle, k.defender_id), teamId: bundle.account.outcome.conceding_team_id,
              gloss: LINK_GLOSS[k.kind], chip: "Computed link",
-             meters: own ? [{ label: LINK_GLOSS[k.kind], fraction: own.magnitude, tone: "pos",
+             meters: own ? [{ label: direction(own.positive), fraction: own.magnitude, tone: "pos",
                               metric: analyst && away !== undefined ? `${away.toFixed(1)} m from the shot` : null }] : [] };
   }
   if (step.kind === "context") {
@@ -224,7 +228,7 @@ export function stepView(bundle: Bundle, step: StoryStep, mode: Mode): StepView 
     const unit = f.unit === "share" ? "" : ` ${f.unit}`;
     const fmt = (v: number) => (f.unit === "share" ? `${Math.round(100 * v)}%` : `${v.toFixed(1)}${unit}`);
     const spread = f.spread ? ` · usual ${fmt(f.spread[0])}–${fmt(f.spread[1])}` : "";
-    return { ...base, title: "Match context", teamId: f.team_id, gloss: CONTEXT_GLOSS[f.kind], chip: "Match context",
+    return { ...base, title: CONTEXT_TITLE[f.kind], teamId: f.team_id, gloss: CONTEXT_TITLE[f.kind], chip: "Match context",
              meters: [{ label: "Here", fraction: f.here / top, tone: "neg", metric: analyst ? fmt(f.here) : null },
                       { label: "Usually", fraction: f.baseline / top, tone: "chosen",
                         metric: analyst ? `${fmt(f.baseline)}${spread} · ${f.confidence} confidence, ${f.sample_size} samples`
@@ -302,8 +306,17 @@ export function momentHeader(bundle: Bundle, mode: Mode = "analyst"): MomentHead
     classLabel: moment.type.replace(/_/g, " ").toUpperCase(),
     framing: outcome.realized ? "realized" : "prevented",
     clock: bundle.match.moment_clock,
-    description: (mode === "fan" ? bundle.narration?.headline_fan : bundle.narration?.headline) ?? null,
+    description: lede(bundle, mode),
   };
+}
+
+/** The telling's headline, without the result it would repeat ("A goal that didn't happen: ..."). */
+function lede(bundle: Bundle, mode: Mode): string | null {
+  const line = (mode === "fan" ? bundle.narration?.headline_fan : bundle.narration?.headline) ?? null;
+  const result = `${bundle.outcome_display.result}: `;
+  if (!line || !line.startsWith(result)) return line;
+  const rest = line.slice(result.length);
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
 }
 
 /** Elapsed match clock at a time in the moment's period. */

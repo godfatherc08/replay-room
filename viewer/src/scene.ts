@@ -1,5 +1,5 @@
-// The 3D scene: a dark striped pitch to scale with goal frames, instanced player figures in team kits, the
-// ball, one step's overlays, and an orbit camera that eases onto what matters (2D/3D, heading, auto-rotate).
+// The 3D scene: a dark striped pitch to scale with goal frames (in a procedural stadium unless turned off),
+// instanced player figures in team kits, the ball, one step's overlays, and an orbit camera that eases onto what matters (2D/3D, heading, auto-rotate).
 //
 // Focus: setHighlight rings the players a fact names and dims everyone else; setLabel floats one name tag
 // over one player. Every other player shows only their shirt number.
@@ -24,9 +24,11 @@ import type { Bundle } from "./bundle";
 import type { Sample } from "./motion";
 import { COLORS, kitOf, type Overlay, type Vec2 } from "./overlays";
 import { PLAYER_HEIGHT, PlayerBodies } from "./players";
+import { buildStadium } from "./stadium";
 
 export interface SceneOptions {
   labels: boolean; // text needs a 2D canvas (off in headless tests)
+  stadium?: boolean; // stands, floodlights and sky around the pitch (decorative; ?stadium=0 turns it off)
 }
 
 interface Marker {
@@ -50,6 +52,7 @@ export class PitchScene {
   highlighted: string[] = [];
   label: { id: string; mesh: Mesh } | null = null;
   overlayMeshes: Mesh[] = [];
+  stadium: Mesh[] = [];
   is2D = false;
   private readonly half: Vec2;
   private readonly materials = new Map<string, StandardMaterial>();
@@ -72,6 +75,10 @@ export class PitchScene {
     const sun = new DirectionalLight("sun", new Vector3(-0.4, -1, 0.5), this.scene);
     sun.intensity = 0.55;
     this.buildPitch();
+    if (opts.stadium) {
+      this.stadium = buildStadium(this.scene, { length: bundle.pitch.length, width: bundle.pitch.width,
+                                                kitColors: bundle.teams.map((t) => t.kit.shirt), textures: opts.labels });
+    }
     this.playerIds = bundle.objects.filter((o) => o.kind === "player").map((o) => o.id);
     this.bodies = PlayerBodies.create(this.scene, this.playerIds, this.playerIds.map((id) => kitOf(bundle, id)));
     this.ball = MeshBuilder.CreateSphere("ball", { diameter: 0.6, segments: 16 }, this.scene);

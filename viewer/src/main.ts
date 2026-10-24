@@ -2,7 +2,7 @@
 // and open Story Mode on its title card, the camera framed on the whole move.
 //
 // URL parameters: ?mode=fan, ?view=explore, ?jump=<contribution> (Explore, at that fact),
-// ?step=<n> (Story, paused at step n, 1-based), ?play=1 (start the analysis).
+// ?step=<n> (Story, paused at step n, 1-based), ?play=1 (start the analysis), ?stadium=0 (the bare pitch).
 
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { CreateScreenshot } from "@babylonjs/core/Misc/screenshotTools";
@@ -40,7 +40,7 @@ async function start(): Promise<void> {
   const bundle = await loadBundle(url);
   const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, antialias: true });
   engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 2));
-  const scene = new PitchScene(engine, bundle, { labels: true });
+  const scene = new PitchScene(engine, bundle, { labels: true, stadium: params.get("stadium") !== "0" });
   scene.camera.attachControl(canvas, true);
   const viewer = new Viewer(bundle, scene);
   const open = (id: string) => {
