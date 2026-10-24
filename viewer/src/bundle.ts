@@ -268,6 +268,40 @@ export interface StoryStep {
   frame_id: number;
   caption: string; // analyst register
   plain: string; // fan register: no numbers, no jargon
+  deep: string; // the deep passage (evidence treatise L3), analyst register; "" when the beat has none
+  deep_plain: string; // the same, fan register
+}
+
+/** A story player's position against their average in this phase (context.positions). */
+export interface PlayerPosition {
+  player_id: string;
+  team_id: string;
+  frame_id: number;
+  timestamp: number;
+  x: number;
+  y: number;
+  phase: "attacking" | "defending";
+  average: [number, number] | null;
+  sample_frames: number;
+  sample_spells: number;
+  confidence: "low" | "medium" | "high" | null;
+  deviation_m: number | null;
+  forward_m: number | null;
+  lateral_m: number | null;
+  to_ball_m: number;
+  to_opponent_m: number;
+  nearest_opponent_id: string;
+  to_goal_m: number;
+}
+
+/** The positional evidence of one beat, for the deep overlays (render.export._deep). */
+export interface DeepBeat {
+  positions: PlayerPosition[];
+  marking: { defender_id: string; man_id: string; frame_from: number; frame_to: number; separation_from: number;
+             separation_to: number; held: boolean } | null;
+  swing: { label: string; team_id: string; zone: string | null; frame_from: number; frame_to: number; seconds: number;
+           control_from: number; control_to: number } | null;
+  surface?: { nx: number; ny: number; x: number[]; y: number[]; team_id: string; from: number[]; to: number[] };
 }
 
 /** The proof behind a claim (render.proof): who, which frames, which feed events, what was measured. */
@@ -317,7 +351,7 @@ export interface Proof {
 export const FACT_KINDS: ReadonlySet<BeatKind> = new Set(["build_up", "lead", "flaw", "punish"]);
 
 export interface Bundle {
-  bundle_version: "5";
+  bundle_version: "6";
   match: MatchInfo;
   goalkeepers: string[];
   display: DisplayRow[];
@@ -339,6 +373,7 @@ export interface Bundle {
   outcome_display: OutcomeDisplay;
   story: StoryStep[];
   proofs: { contributions: Record<string, Proof>; beats: Record<string, Proof> };
+  deep: Record<string, DeepBeat>;
 }
 
 export interface IndexEntry {
@@ -351,12 +386,12 @@ export interface IndexEntry {
 
 const REQUIRED = ["account", "pitch", "teams", "frames", "objects", "tracks", "events", "key_spot", "jumps", "match",
                   "goalkeepers", "display", "narration", "plan", "context", "match_moments", "meaning",
-                  "outcome_display", "story", "proofs"] as const;
+                  "outcome_display", "story", "proofs", "deep"] as const;
 
 export function parseBundle(data: unknown): Bundle {
   if (typeof data !== "object" || data === null) throw new Error("bundle is not an object");
   const b = data as Record<string, unknown>;
-  if (b.bundle_version !== "5") throw new Error(`unsupported bundle version ${String(b.bundle_version)}`);
+  if (b.bundle_version !== "6") throw new Error(`unsupported bundle version ${String(b.bundle_version)}`);
   for (const key of REQUIRED) if (!(key in b)) throw new Error(`bundle is missing "${key}"`);
   const bundle = data as Bundle;
   const frames = new Set(bundle.frames.frame_ids);

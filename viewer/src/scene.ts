@@ -55,6 +55,7 @@ export class PitchScene {
   highlighted: string[] = [];
   labels = new Map<string, Mesh>(); // the floating name tags: the step's lead player, or every player of a proof
   overlayMeshes: Mesh[] = [];
+  private fade: { from: Mesh; to: Mesh; t: number; seconds: number } | null = null; // the control swing, playing
   stadium: Mesh[] = [];
   is2D = false;
   private readonly half: Vec2;
@@ -312,9 +313,42 @@ export class PitchScene {
   }
 
   setOverlays(overlays: Overlay[]): void {
-    for (const mesh of this.overlayMeshes) mesh.dispose(false, mesh.name.endsWith("-label"));
+    for (const mesh of this.overlayMeshes) mesh.dispose(false, mesh.name.endsWith("-label") || mesh.name.endsWith("-from")
+                                                             || mesh.name.endsWith("-to"));
     this.overlayMeshes = [];
+    this.fade = null;
     overlays.forEach((o, i) => this.overlayMeshes.push(...this.drawOverlay(o, `ov${i}`)));
+  }
+
+  /** The attacking team's control over the pitch as a translucent ground tint: their colour where they hold the
+   *  space, the defending team's where it does not, stronger the more one-sided it is. */
+  private surfacePlane(name: string, o: Extract<Overlay, { type: "surface" }>, values: number[]): Mesh {
+    const scale = 8;
+    const tex = new DynamicTexture(`${name}-tex`, { width: o.nx * scale, height: o.ny * scale }, this.scene, false);
+    tex.hasAlpha = true;
+    const ctx = tex.getContext() as CanvasRenderingContext2D;
+    const rgb = (hex: string) => [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16)).join(",");
+    const [att, def] = [rgb(o.attack), rgb(o.defend)];
+    ctx.clearRect(0, 0, o.nx * scale, o.ny * scale);
+    for (let j = 0; j < o.ny; j++) {
+      for (let i = 0; i < o.nx; i++) {
+        const c = values[j * o.nx + i];
+        const a = Math.min(Math.abs(c - 0.5) * 2, 1) * 0.5;
+        ctx.fillStyle = `rgba(${c >= 0.5 ? att : def},${a.toFixed(3)})`;
+        ctx.fillRect(i * scale, (o.ny - 1 - j) * scale, scale, scale); // canvas rows run top (high y) to bottom
+      }
+    }
+    tex.update();
+    const mat = new StandardMaterial(`${name}-mat`, this.scene);
+    mat.diffuseTexture = tex;
+    mat.useAlphaFromDiffuseTexture = true;
+    mat.emissiveColor = Color3.White();
+    mat.disableLighting = true;
+    const plane = MeshBuilder.CreateGround(name, { width: this.bundle.pitch.length, height: this.bundle.pitch.width },
+                                           this.scene);
+    plane.position.y = 0.02;
+    plane.material = mat;
+    return plane;
   }
 
   /** A thick dashed line as short tube segments, merged into one mesh. */
@@ -398,6 +432,15 @@ export class PitchScene {
         out.push(l);
         break;
       }
+      case "surface": {
+        if (!this.opts.labels) break; // painted on a 2D canvas: not in headless tests
+        const from = this.surfacePlane(`${name}-from`, o, o.from);
+        const to = this.surfacePlane(`${name}-to`, o, o.to);
+        to.visibility = 0;
+        this.fade = { from, to, t: 0, seconds: Math.max(o.seconds, 1.2) };
+        out.push(from, to);
+        break;
+      }
       case "cross": {
         for (const [k, rot] of [[0, Math.PI / 4], [1, -Math.PI / 4]] as const) {
           const bar = MeshBuilder.CreateBox(`${name}-${k}`, { width: 2.4, height: 0.14, depth: 0.34 }, this.scene);
@@ -462,6 +505,12 @@ export class PitchScene {
   /** Per-frame camera easing towards the last focus; tags keep a readable size at any distance. */
   step(dtSeconds: number): void {
     this.bodies.turn = 1 - Math.exp(-dtSeconds * TURN_RATE); // for the next update: turning is per second
+    if (this.fade) { // the swing: the surface at its start fades into the surface at its end, then holds
+      this.fade.t = Math.min(this.fade.t + dtSeconds, this.fade.seconds);
+      const k = this.fade.t / this.fade.seconds;
+      this.fade.from.visibility = 1 - k;
+      this.fade.to.visibility = k;
+    }
     const s = Math.min(Math.max(this.camera.radius / TAG_REFERENCE_RADIUS, 1), 2.4);
     for (const m of this.markers.values()) {
       if (!m.plate) continue;

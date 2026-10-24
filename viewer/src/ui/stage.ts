@@ -62,6 +62,23 @@ export function buildStage(root: HTMLElement, viewer: Viewer, state: UIState, co
     row.append(k, el("span", undefined, label));
     return row;
   };
+  // the deep view's layers, each one toggled (evidence treatise §5.0: nothing forced on)
+  const toggles = el("div", "rr-legend-toggles");
+  toggles.append(el("span", "rr-label", "Go deeper layers"));
+  for (const [layer, label, color] of [["control", "Pitch control", COLORS.zone], ["ghosts", "Average positions", COLORS.ghost],
+                                       ["marking", "Marking (red: broken)", COLORS.broken],
+                                       ["distances", "Distances", COLORS.label]] as const) {
+    const row = el("label", "rr-toggle");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = state.layers[layer];
+    box.dataset.layer = layer;
+    box.addEventListener("change", () => state.setLayer(layer, box.checked));
+    const sw = el("span", "rr-key rr-key-solid");
+    sw.style.setProperty("--c", color);
+    row.append(box, sw, el("span", undefined, label));
+    toggles.append(row);
+  }
   keys.append(
     key("rr-key-ring", COLORS.highlight, "In focus"),
     key("rr-key-dash", COLORS.pass, "Pass / movement"),
@@ -69,6 +86,7 @@ export function buildStage(root: HTMLElement, viewer: Viewer, state: UIState, co
     key("rr-key-zone", COLORS.zone, "Threat zone"),
     key("rr-key-solid", COLORS.chosen, "Option chosen"),
     key("rr-key-dash", COLORS.better, "Better option"),
+    toggles,
   );
   legendToggle.addEventListener("click", () => {
     keys.hidden = !keys.hidden;
@@ -132,23 +150,22 @@ export function buildStage(root: HTMLElement, viewer: Viewer, state: UIState, co
     const chip = button(`rr-evidence-chip${open ? " rr-on" : ""}`, "Show the evidence",
                         `<span class="rr-check">✓</span><span>Evidence · ${evidenceChip(proof)}</span>`);
     chip.addEventListener("click", () => onEvidence(open ? null : { beat: step.beat_id }));
-    const more = button("rr-expand", state.expanded ? "Show less" : "Show the full reasoning",
-                        `<span>${state.expanded ? "Less" : "Why"}</span>${icon("chevron", 12)}`);
+    const more = button("rr-expand", state.expanded ? "Show less" : "Go deeper: the positional evidence",
+                        `<span>${state.expanded ? "Less" : "Go deeper"}</span>${icon("chevron", 12)}`);
     more.setAttribute("aria-expanded", String(state.expanded));
     more.addEventListener("click", () => state.setExpanded(!state.expanded));
     actions.append(chip, more);
     const parts: HTMLElement[] = [top, claim, actions];
 
-    if (state.expanded) { // the full reasoning: the rest of the telling, then why it mattered, measured
+    if (state.expanded) { // L3: the rest of the telling, then the deep passage (positions, averages, the swing)
       const detail = el("div", "rr-detail");
       const rest = v.caption.slice(firstSentence(v.caption).length).trim();
       if (rest) detail.append(el("p", "rr-caption", rest));
       const why = el("div", "rr-why");
-      why.append(el("h3", "rr-label", "Why it mattered"));
-      for (const m of proofView(proof, state.mode).measured) {
-        const row = el("p", "rr-why-line", m.text);
-        why.append(row);
-      }
+      const deep = state.mode === "fan" ? step.deep_plain : step.deep;
+      why.append(el("h3", "rr-label", deep ? "Going deeper" : "Why it mattered"));
+      if (deep) why.append(el("p", "rr-why-line", deep));
+      else for (const m of proofView(proof, state.mode).measured) why.append(el("p", "rr-why-line", m.text));
       const meters = el("div", "rr-step-meters");
       for (const m of v.meters) {
         const row = el("div", "rr-meter-row");

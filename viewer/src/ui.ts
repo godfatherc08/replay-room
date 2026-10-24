@@ -21,7 +21,7 @@ import { buildStage, type StageControls } from "./ui/stage";
 import { UIState } from "./ui/state";
 import { buildTopbar } from "./ui/topbar";
 import { proofOf } from "./account";
-import { overlaysFor, stepOverlays } from "./overlays";
+import { deepOverlays, overlaysFor, stepOverlays } from "./overlays";
 import type { EvidenceKey } from "./ui/state";
 
 export type { Mode, StageControls, View };
@@ -86,6 +86,9 @@ export function buildUI(roots: UIRoots, viewer: Viewer, opts: UIOptions = {}): U
     state.setEvidence(key);
   };
 
+  // the deep view (L3): drawn with the step while its card is expanded, only that step's evidence
+  viewer.extra = (step) => (state.expanded ? deepOverlays(viewer.bundle, step, state.mode, state.layers) : []);
+
   const top = buildTopbar(roots.topbar, viewer.bundle, clock, state, opts.onPick);
   const stage = buildStage(roots.stage, viewer, state, opts.stage, evidence);
   const ribbon = buildRibbon(roots.ribbon, viewer, state, showStep);
@@ -102,7 +105,13 @@ export function buildUI(roots: UIRoots, viewer: Viewer, opts: UIOptions = {}): U
 
   let mode = state.mode;
   let view = state.view;
+  let deep = `${state.expanded}|${JSON.stringify(state.layers)}`;
   state.onChange(() => {
+    const nowDeep = `${state.expanded}|${JSON.stringify(state.layers)}`;
+    if (nowDeep !== deep) {
+      deep = nowDeep;
+      viewer.redraw();
+    }
     if (state.mode !== mode) {
       mode = state.mode;
       viewer.setMode(mode);

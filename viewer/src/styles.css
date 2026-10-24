@@ -167,6 +167,9 @@ h1, h2, p, ol { margin: 0; }
 .rr-detail { display: grid; gap: var(--s2); padding-top: var(--s2); border-top: 1px solid var(--line); }
 .rr-why { display: grid; gap: var(--s1); }
 .rr-why-line { font-size: var(--fs-body); line-height: 1.5; color: var(--text); }
+.rr-legend-toggles { display: grid; gap: var(--s1); margin-top: var(--s2); padding-top: var(--s2); border-top: 1px solid var(--line); }
+.rr-toggle { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-label); color: var(--text-2); cursor: pointer; }
+.rr-toggle input { accent-color: var(--accent); margin: 0; }
 .rr-label { font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 /* the evidence panel: claim, measured, players, frames, records */
 .rr-evidence { border-color: rgba(52, 211, 153, 0.5); display: grid; gap: var(--s2); }

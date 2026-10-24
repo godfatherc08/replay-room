@@ -39,6 +39,8 @@ export class Viewer {
   mode: Mode = "analyst";
   view: View = "story";
   proof: Proof | null = null; // the evidence open on the pitch, if any
+  /** Overlays a step adds to its own drawing (the UI's deep view, when the card is expanded). */
+  extra: (step: StoryStep) => Overlay[] = () => [];
   private readonly jumps: Map<string, number>;
   private pending: Overlay[] | null = null; // drawn when the lead-in reaches the frame
 
@@ -115,7 +117,7 @@ export class Viewer {
     if (!(ahead > 0 && ahead <= CONTINUE_WITHIN_S * this.clock.fps)) this.clock.seekIndex(Math.max(target - lead, 0));
     this.clock.setSpeed(this.story.speed);
     this.clock.playTo(target);
-    const overlays = stepOverlays(this.bundle, step, this.mode);
+    const overlays = [...stepOverlays(this.bundle, step, this.mode), ...this.extra(step)];
     this.pending = this.clock.playing ? overlays : null;
     this.scene.setOverlays(this.clock.playing ? [] : overlays); // already at the frame: draw now
     this.focusOn(stepPlayers(this.bundle, step), step.frame_id, overlays);
@@ -160,11 +162,19 @@ export class Viewer {
     else this.clear();
   }
 
+  /** Redraw the current step's overlays (its own drawing and any extra), e.g. when the deep view opens or closes. */
+  redraw(): void {
+    if (this.proof || this.view !== "story" || !this.story.current) return;
+    const overlays = [...stepOverlays(this.bundle, this.story.current, this.mode), ...this.extra(this.story.current)];
+    if (this.pending) this.pending = overlays;
+    else this.scene.setOverlays(overlays);
+  }
+
   /** Analyst / Fan changes the words and numbers, never the facts: redraw what is up in the new register. */
   setMode(mode: Mode): void {
     this.mode = mode;
     if (this.view === "story" && this.story.current) {
-      const overlays = stepOverlays(this.bundle, this.story.current, mode);
+      const overlays = [...stepOverlays(this.bundle, this.story.current, mode), ...this.extra(this.story.current)];
       if (this.pending) this.pending = overlays;
       else this.scene.setOverlays(overlays);
     } else if (this.view === "explore" && this.active) {

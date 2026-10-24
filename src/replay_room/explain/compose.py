@@ -450,10 +450,16 @@ def beat_positions(facts: Facts, context: MatchContext | None, b: Beat, players:
     for p in context.positions:
         if p.player_id in players and (p.player_id not in best or abs(p.timestamp - t) < abs(best[p.player_id].timestamp - t)):
             best[p.player_id] = p
+    first = [facts.contribution(b.contribution_id).player_id] if b.contribution_id else []
+    if b.link_id is not None:
+        k = facts.link(b.link_id)
+        first += [p for p in (k.defender_id, k.runner_id, k.marked_player_id) if p]
+    rank = {pid: i for i, pid in enumerate(dict.fromkeys(first))}
+    ordered = sorted(best.values(), key=lambda p: (rank.get(p.player_id, len(rank)), p.player_id))
     label = b.link_id or b.contribution_id
     swing = next((s for s in context.swings if s.label == label), None)
     marking = next((m for m in context.markings if m.defender_id in players), None)
-    return list(best.values()), swing, marking
+    return ordered, swing, marking
 
 
 class Deep:
@@ -540,8 +546,6 @@ class Deep:
                 if f.spread else ""
             return (f"{text}{spread} {self.fit(False)}", f"{fan} {self.fit(True)}")
         positions, swing, marking = beat_positions(self.t.facts, self.ctx, b, players)
-        order = {pid: i for i, pid in enumerate(sorted(players, key=lambda p: p not in self.t.full))}
-        positions.sort(key=lambda p: order.get(p.player_id, 99))
         out = {False: [], True: []}
         for fan in (False, True):
             for p in positions[:3]:

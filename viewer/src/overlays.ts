@@ -21,7 +21,10 @@ export type Overlay =
   | { type: "disc"; center: Vec2; radius: number; color: string; alpha: number; label?: string }
   | { type: "line"; a: Vec2; b: Vec2; color: string; dashed?: boolean; label?: string }
   | { type: "trail"; points: Vec2[]; color: string }
-  | { type: "cross"; at: Vec2; color: string; label?: string };
+  | { type: "cross"; at: Vec2; color: string; label?: string }
+  // the attacking team's pitch control over the whole pitch, fading from one frame's to another's
+  | { type: "surface"; nx: number; ny: number; from: number[]; to: number[]; attack: string; defend: string;
+      seconds: number };
 
 export const COLORS = {
   highlight: "#fbbf24", // focus ring
@@ -33,7 +36,20 @@ export const COLORS = {
   marking: "#fbbf24",
   denied: "#fb923c",
   label: "#f8fafc",
+  ghost: "#cbd5e1", // an average position, and the arrow to where the player is
+  held: "#22c55e", // a marking that held
+  broken: "#ef4444", // a marking that broke
 };
+
+/** The layers of the deep view (evidence treatise §5.2, L3), each toggled from the legend. */
+export interface DeepLayers {
+  control: boolean;
+  ghosts: boolean;
+  marking: boolean;
+  distances: boolean;
+}
+
+export const ALL_DEEP_LAYERS: DeepLayers = { control: true, ghosts: true, marking: true, distances: true };
 
 const SHOT_TYPES = new Set(["shot", "shot_freekick", "shot_penalty"]);
 
@@ -285,6 +301,50 @@ export function stepOverlays(bundle: Bundle, step: StoryStep, mode: Mode = "anal
   }
 }
 
+/** The deep view of a beat (L3): only this beat's positional evidence, every element a computed fact.
+ *  Control surface (attacking team's control, fading over the swing) with the swing tagged at the shooting spot;
+ *  average-position ghosts with an arrow to where each player is; the marking, green if it held, red if it
+ *  broke; the key distance to the nearest opponent. Numbers on the pitch in Analyst only. */
+export function deepOverlays(bundle: Bundle, step: StoryStep, mode: Mode = "analyst",
+                             layers: DeepLayers = ALL_DEEP_LAYERS): Overlay[] {
+  const d = bundle.deep[step.beat_id];
+  if (!d) return [];
+  const analyst = mode === "analyst";
+  const out: Overlay[] = [];
+  const attacking = bundle.account.outcome.beneficiary_team_id;
+  const defending = bundle.account.outcome.conceding_team_id;
+  if (layers.control && d.surface && d.swing) {
+    out.push({ type: "surface", nx: d.surface.nx, ny: d.surface.ny, from: d.surface.from, to: d.surface.to,
+               attack: teamColor(bundle, attacking), defend: teamColor(bundle, defending), seconds: d.swing.seconds });
+    out.push({ type: "disc", center: [bundle.key_spot.x, bundle.key_spot.y], radius: 1.2, color: COLORS.zone, alpha: 0.6,
+               label: analyst ? `control ${d.swing.control_from.toFixed(2)} → ${d.swing.control_to.toFixed(2)}` : undefined });
+  }
+  if (layers.ghosts) {
+    for (const p of d.positions) {
+      if (!p.average || p.deviation_m === null || p.deviation_m < 2) continue;
+      out.push({ type: "disc", center: p.average, radius: 0.9, color: COLORS.ghost, alpha: 0.35 });
+      out.push({ type: "arrow", from: p.average, to: [p.x, p.y], color: COLORS.ghost, width: 0.1, dashed: true,
+                 label: analyst && p === d.positions[0] ? `${p.deviation_m.toFixed(1)} m from usual` : undefined });
+    }
+  }
+  if (layers.marking && d.marking) {
+    const a = positionAt(bundle, d.marking.defender_id, d.marking.frame_to);
+    const b = positionAt(bundle, d.marking.man_id, d.marking.frame_to);
+    if (a && b) out.push({ type: "line", a, b, color: d.marking.held ? COLORS.held : COLORS.broken,
+                           label: analyst ? `${d.marking.separation_to.toFixed(1)} m` : undefined });
+  }
+  if (layers.distances && d.positions.length) {
+    const p = d.positions[0];
+    const marked = d.marking && d.marking.defender_id === p.player_id && d.marking.man_id === p.nearest_opponent_id;
+    const opp = positionAt(bundle, p.nearest_opponent_id, p.frame_id);
+    if (opp && !marked) {
+      out.push({ type: "line", a: [p.x, p.y], b: opp, color: COLORS.label, dashed: true,
+                 label: analyst ? `${p.to_opponent_m.toFixed(1)} m` : undefined });
+    }
+  }
+  return out;
+}
+
 /** Every pitch point an overlay touches (for framing the camera on what is drawn). */
 export function overlayPoints(overlays: Overlay[]): Vec2[] {
   return overlays.flatMap((o): Vec2[] => {
@@ -294,6 +354,7 @@ export function overlayPoints(overlays: Overlay[]): Vec2[] {
       case "line": return [o.a, o.b];
       case "trail": return o.points;
       case "cross": return [o.at];
+      case "surface": return [];
     }
   });
 }

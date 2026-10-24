@@ -307,7 +307,34 @@ describe("app shell", () => {
     card.querySelector<HTMLButtonElement>(".rr-expand")!.click(); // the full reasoning, on demand
     const open = roots.stage.querySelector<HTMLElement>(".rr-step-card")!;
     expect([...open.querySelectorAll(".rr-gloss")].map((g) => g.textContent)).toEqual(["Here", "Usually"]);
-    expect(open.querySelector(".rr-why-line")!.textContent).toMatch(/^Northbridge FC's back line was 16\.3 m/);
+    expect(open.querySelector(".rr-why-line")!.textContent).toMatch(
+      /^With the ball in their third, Northbridge's back line is 16\.3 m from their own goal line here/);
+  });
+
+  it("Go deeper: the beat's positional evidence on the pitch, layer by layer, and only that beat's", () => {
+    const { b, v, roots, ui } = shell();
+    const scene = v.scene as FakeScene;
+    const flaw = b.story.findIndex((s) => s.kind === "flaw");
+    roots.ribbon.querySelectorAll<HTMLButtonElement>(".rr-node-btn")[flaw].click();
+    run(v, 3); // the lead-in reaches the frame: the step's own drawing is up
+    const own = scene.overlays.length;
+    roots.stage.querySelector<HTMLButtonElement>(".rr-expand")!.click();
+    const card = roots.stage.querySelector<HTMLElement>(".rr-step-card")!;
+    expect(card.querySelector(".rr-label")!.textContent).toBe("Going deeper");
+    expect(card.querySelector(".rr-why-line")!.textContent).toContain(
+      "Novak is 16.8 m higher up the pitch than their average in this phase of play");
+    const deep = scene.overlays.slice(own);
+    expect(deep.map((o) => o.type)).toEqual(["surface", "disc", "disc", "arrow", "disc", "arrow", "disc", "arrow", "line"]);
+    expect(deep.find((o) => o.type === "disc" && o.label)!).toMatchObject({ label: "control 0.33 → 0.41" });
+    expect(deep.find((o) => o.type === "arrow")!).toMatchObject({ label: "17.4 m from usual", dashed: true });
+    ui.state.setLayer("control", false);
+    expect(scene.overlays.some((o) => o.type === "surface")).toBe(false); // a toggled-off layer is gone
+    ui.state.setMode("fan");
+    expect(scene.overlays.filter((o) => "label" in o && o.label).length).toBe(0); // no numbers on the pitch in Fan
+    v.story.next(); // the next beat: its own evidence, never this one's
+    run(v, 3);
+    expect(scene.overlays.some((o) => o.type === "arrow" && o.color === "#cbd5e1" && o.label === "17.4 m from usual"))
+      .toBe(false);
   });
 
   it("clicking a claim opens its proof: players ringed and named, the frame, what was measured, the records", () => {
