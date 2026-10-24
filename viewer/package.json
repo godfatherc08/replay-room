@@ -17,6 +17,7 @@
     "@babylonjs/core": "8.56.2"
   },
   "devDependencies": {
+    "@types/node": "^22.20.5",
     "jsdom": "26.1.0",
     "playwright-core": "1.53.2",
     "typescript": "5.9.3",
