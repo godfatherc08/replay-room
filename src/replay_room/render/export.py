@@ -33,6 +33,9 @@ nothing that decides anything:
 * ``proofs``: the evidence behind every fact (by contribution id) and every told beat (by beat id): the
   players involved, the frames and events cited (with the feed's event ids), the measured number with its
   meaning, and the frame to open it at (``render.proof``);
+* ``deep``: per told beat with positional facts, what its deep passage draws on, for the viewer to draw:
+  the players' positions against their averages, the marking, the control swing at the shooting spot and
+  the attacking team's control surface (a 5 m grid) at both ends of it;
 * ``plan`` / ``context`` / ``editions``: the framing plan, the moment's match
   context, and the Editor's editions (by register) when the agents made them;
 * ``teams[].kit``: display colours by side (the feed has none);
@@ -67,7 +70,7 @@ from replay_room.render.display import (KITS, contribution_display, match_clock,
                                         outcome_display, score_before)
 from replay_room.metrics.pass_value import frame_ids_at
 
-BUNDLE_VERSION = "5"
+BUNDLE_VERSION = "6"
 
 
 def _r(v: float) -> float | None:
@@ -189,6 +192,7 @@ def export_moment(account: CausalAccount, match: Match, narration: Narration, pl
         "outcome_display": outcome_display(account),
         "story": (story := story_steps(account, narration, jumps, event_frame)),
         "proofs": _proofs(account, match, context, story, jumps),
+        "deep": _deep(account, match, narration, plan, context),
     }
 
 
@@ -238,7 +242,7 @@ def story_steps(account: CausalAccount, narration: Narration, jumps: list[dict[s
                       "contribution_id": b["contribution_id"], "link_id": b["link_id"],
                       "context_fact_id": b["context_fact_id"],
                       "frame_id": beat_frame(b, account, jumps, event_frame),
-                      "caption": b["text"], "plain": b["fan"]})
+                      "caption": b["text"], "plain": b["fan"], "deep": b["deep"], "deep_plain": b["deep_fan"]})
     return steps
 
 
@@ -251,6 +255,51 @@ def _proofs(account: CausalAccount, match: Match, context: MatchContext | None, 
         p["focus_frame"] = frame_of[cid]
     for step in story:
         out["beats"][step["beat_id"]]["focus_frame"] = step["frame_id"]
+    return out
+
+
+SURFACE_NX, SURFACE_NY = 21, 14  # a 5 m grid: enough to see who holds which space, light enough to ship
+
+
+def _deep(account: CausalAccount, match: Match, narration: Narration, plan: FramingPlan,
+          context: MatchContext | None) -> dict[str, Any]:
+    """Per told beat, the positional facts its deep passage draws on, for the viewer to draw: its players' positions
+    and averages, the control swing at the shooting spot (with the attacking team's control surface at both ends of
+    it) and the marking it involves. Only beats with positional facts appear."""
+    from replay_room.explain.compose import beat_positions
+    from replay_room.framing.facts import Facts
+    from replay_room.metrics.pitch_control import grid, influence_control
+
+    if context is None:
+        return {}
+    facts = Facts(account, context)
+    w = account.moment.window
+    rows = match.tracking[(match.tracking["frame_id"] >= w.frame_start) & (match.tracking["frame_id"] <= w.frame_end)]
+    gx, gy = grid(SURFACE_NX, SURFACE_NY)
+    surfaces: dict[int, list[float]] = {}
+
+    def surface(frame_id: int) -> list[float]:
+        if frame_id not in surfaces:
+            c = influence_control(rows[rows["frame_id"] == frame_id], account.moment.attacking_team_id, gx, gy)
+            surfaces[frame_id] = [round(float(v), 2) for v in c.ravel()]
+        return surfaces[frame_id]
+
+    out: dict[str, Any] = {}
+    for b in plan.beats:
+        if b.kind in ("outcome", "counterfactual", "context"):
+            continue
+        players = facts.players(b, plan.lead_contribution_id, plan.flaw_contribution_id)
+        positions, swing, marking = beat_positions(facts, context, b, players)
+        if not positions and swing is None:
+            continue
+        entry: dict[str, Any] = {"positions": [p.model_dump(mode="json") for p in positions],
+                                 "marking": marking.model_dump(mode="json") if marking else None,
+                                 "swing": swing.model_dump(mode="json") if swing else None}
+        if swing is not None:
+            entry["surface"] = {"nx": SURFACE_NX, "ny": SURFACE_NY, "x": [round(float(v), 2) for v in gx],
+                                "y": [round(float(v), 2) for v in gy], "team_id": account.moment.attacking_team_id,
+                                "from": surface(swing.frame_from), "to": surface(swing.frame_to)}
+        out[b.beat_id] = entry
     return out
 
 

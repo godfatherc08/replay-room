@@ -29,6 +29,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from replay_room.contracts.causal_account import CausalAccount
 from replay_room.contracts.context import ContextFact, MatchContext
 from replay_room.contracts.moment import Moment
 from replay_room.contracts.pitch import BALL_ID, PITCH_LENGTH
@@ -163,7 +164,8 @@ def _frame_fact(kind: str, values: pd.DataFrame, m: Moment, team: str) -> Contex
 
 
 def match_context(m: Moment, actions: pd.DataFrame, tracking: pd.DataFrame, home_team_id: str,
-                  goalkeepers: frozenset[str]) -> MatchContext:
+                  goalkeepers: frozenset[str], account: CausalAccount | None = None) -> MatchContext:
+    """The baselines; with the moment's ``account``, also the positional facts of the story's players."""
     possessions = segment_possessions(actions)
     facts, missing = [], []
     press = _counter_press(m, possessions, actions)
@@ -176,12 +178,17 @@ def match_context(m: Moment, actions: pd.DataFrame, tracking: pd.DataFrame, home
     for kind in ("line_height", "marking_distance"):
         fact = _frame_fact(kind, values, m, m.defending_team_id)
         (facts if isinstance(fact, ContextFact) else missing).append(fact)
+    positions, swings, markings = (positional_facts(account, actions, tracking, home_team_id, possessions)
+                                   if account is not None else ((), (), ()))
     return MatchContext(game_id=m.game_id, moment_id=m.moment_id, team_id=m.defending_team_id, facts=tuple(facts),
-                        insufficient=tuple(missing))
+                        insufficient=tuple(missing), positions=positions, swings=swings, markings=markings)
 
 
-def match_context_for(match, m: Moment) -> MatchContext:
-    """``match_context`` for a loaded ``Match``."""
+def match_context_for(match, m: Moment, account: CausalAccount | None = None) -> MatchContext:
+    """``match_context`` for a loaded ``Match`` (with the account: its positional facts too)."""
     keepers = frozenset(p.player_id for t in (match.meta.home_team, match.meta.away_team) for p in t.players
                         if p.position == "GK")
-    return match_context(m, match.actions, match.tracking, match.meta.home_team_id, keepers)
+    return match_context(m, match.actions, match.tracking, match.meta.home_team_id, keepers, account)
+
+
+from replay_room.context.positions import positional_facts  # noqa: E402  (positions builds on this module)

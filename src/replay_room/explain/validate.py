@@ -80,6 +80,7 @@ GOAL_WORD = re.compile(r"(?<!from )(?<!from their )(?<!from the )(?<!own )\b(the
                        r"(?! that didn't happen| kick| line)|\bmakes? the goal\b|^Goal\b", re.IGNORECASE)
 JARGON = re.compile(r"\b(xG|xT|VAEP|pitch control|expected threat|expected goals|probability|effect|metric)\b",
                     re.IGNORECASE)
+UNIT = re.compile(r"\s?(?:m/s|m|s)\b")  # a number followed by a unit is a measurement
 PLAYER_ID = re.compile(r"\b[A-Z]{2,4}-\d{1,3}\b")
 NUMBER = re.compile(r"(?<![\w.])\d+(?:\.\d+)?%?")
 CAPITALISED = re.compile(r"(?<![A-Za-z\d])[A-Z][A-Za-zÀ-ſ'’-]*")
@@ -108,7 +109,18 @@ class Grounds:
         for f in (context.facts if context else ()):
             measured += [f.here, f.baseline, *(f.spread or ()), *f.metrics.values()]
             probs.append(f.baseline)
+        for p in (context.positions if context else ()):  # the positional facts (evidence treatise L3)
+            measured += [p.x, p.y, *(p.average or ()), p.to_ball_m, p.to_opponent_m, p.to_goal_m,
+                         *(abs(v) for v in (p.deviation_m, p.forward_m, p.lateral_m) if v is not None)]
+            self_counts = (p.sample_frames, p.sample_spells)
+            measured += [float(c) for c in self_counts]
+        for s in (context.swings if context else ()):
+            probs += [s.control_from, s.control_to]
+            measured.append(s.seconds)
+        for m in (context.markings if context else ()):
+            measured += [m.separation_from, m.separation_to]
         self.floats = [abs(v) for v in probs + measured]
+        self.measured = [abs(v) for v in measured]  # metres, seconds, counts: a number with a unit is one of these
         self.integers = {p.shirt_number for p in a.participants if p.shirt_number is not None}
         self.integers |= {round(abs(v)) for v in measured if abs(v) >= 1}
         self.integers |= {len(a.contributions), sum(c.kind != "chance_denied" for c in a.contributions)}
@@ -143,7 +155,13 @@ def check_text(text: str, grounds: Grounds, where: str, players: set[str], *, fa
         if pid not in players:
             errors.append(f"{where}: names player {pid}, who is not in this beat's facts")
     scrubbed = PLAYER_ID.sub(" ", text)
-    for token in NUMBER.findall(scrubbed):
+    for mt in NUMBER.finditer(scrubbed):
+        token = mt.group(0)
+        if UNIT.match(scrubbed, mt.end()) and "." in token and not token.endswith("%"):
+            # a measurement ("0.8 m", "1.2 s") is checked against the measured values at the precision written
+            digits = len(token.split(".")[1])
+            if any(abs(float(token) - v) <= 0.5 * 10 ** -digits + 1e-9 for v in grounds.measured):
+                continue
         if not number_ok(token, grounds.floats, grounds.integers, grounds.shares):
             errors.append(f"{where}: states {token}, which is not a number the tools computed")
     allowed = {w.strip("'’") for pid in players for w in re.split(r"[\s-]+", grounds.names.get(pid, ""))}
@@ -218,4 +236,10 @@ def validate(story: StoryOutput | dict[str, Any], account: CausalAccount, plan: 
         link = b.link_id is not None
         errors += check_text(told.text, grounds, f"beat {b.beat_id} ({b.kind})", players, link=link)
         errors += check_text(told.fan, grounds, f"beat {b.beat_id} ({b.kind}, fan)", players, fan=True, link=link)
+        deep_players = players | {p.nearest_opponent_id for p in (context.positions if context else ())
+                                  if p.player_id in players} | \
+            {m.man_id for m in (context.markings if context else ()) if m.defender_id in players}
+        errors += check_text(told.deep, grounds, f"beat {b.beat_id} ({b.kind}, deep)", deep_players, link=link)
+        errors += check_text(told.deep_fan, grounds, f"beat {b.beat_id} ({b.kind}, deep fan)", deep_players, fan=True,
+                             link=link)
     return errors

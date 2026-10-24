@@ -13,6 +13,13 @@ not a cause the engine attributed.
 * ``confidence`` grades the sample size (``low`` / ``medium`` / ``high``).
 * Every fact cites the records its "here" value was read from (frames of the
   moment window; the lost ball's event for the counter-press).
+
+With the moment's account, it also carries the positional facts the deep
+telling draws on (``context.positions``): each story player's position at the
+story's frame against their average in that phase (confidence-graded, absent
+when the sample is too thin), their distances to the ball, the nearest
+opponent and the goal; the attacking team's pitch-control swing at the
+shooting spot; and the marking assignments, held or broken.
 """
 
 from __future__ import annotations
@@ -48,6 +55,54 @@ class ContextFact(_Model):
     evidence: tuple[EvidenceRef, ...] = Field(min_length=1)
 
 
+class PlayerPosition(_Model):
+    """Where a player was at a frame the story shows, against where they usually are in that phase of play."""
+
+    player_id: str
+    team_id: str
+    frame_id: int
+    timestamp: float
+    x: float
+    y: float
+    phase: Literal["attacking", "defending"]  # the player's team in / out of possession in this moment
+    average: tuple[float, float] | None = None  # mean position over the match frames in the same phase and third
+    sample_frames: int = 0
+    sample_spells: int = 0  # possessions those frames come from (frames are not independent)
+    confidence: Literal["low", "medium", "high"] | None = None  # None: too few spells, no average given
+    deviation_m: float | None = None  # distance from the average
+    forward_m: float | None = None  # + = further up the pitch (towards the goal the player's team attacks)
+    lateral_m: float | None = None  # + = towards the player's left
+    to_ball_m: float
+    to_opponent_m: float  # to the nearest opponent
+    nearest_opponent_id: str
+    to_goal_m: float  # to the centre of the goal under attack in this moment
+
+
+class ControlSwing(_Model):
+    """The attacking team's pitch control at the shooting spot, from one frame to another."""
+
+    label: str  # what the span is: the beat it belongs to
+    team_id: str
+    zone: str | None = None
+    frame_from: int
+    frame_to: int
+    seconds: float
+    control_from: float  # 0..1
+    control_to: float
+
+
+class Marking(_Model):
+    """A marking assignment over a span: the nearest-attacker rule at its start, and whether it held."""
+
+    defender_id: str
+    man_id: str
+    frame_from: int
+    frame_to: int
+    separation_from: float
+    separation_to: float
+    held: bool  # False: the separation grew by MARK_GAIN_M or more
+
+
 class MatchContext(_Model):
     context_version: Literal["1"] = CONTEXT_VERSION
     game_id: str
@@ -55,3 +110,6 @@ class MatchContext(_Model):
     team_id: str  # the defending team
     facts: tuple[ContextFact, ...] = ()
     insufficient: tuple[tuple[str, str], ...] = ()  # (kind, why no baseline was computed)
+    positions: tuple[PlayerPosition, ...] = ()  # the story's players at the story's frames
+    swings: tuple[ControlSwing, ...] = ()
+    markings: tuple[Marking, ...] = ()

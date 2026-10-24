@@ -27,13 +27,15 @@ from pydantic import Field
 from replay_room.contracts.plan import BeatKind
 from replay_room.contracts.refs import EvidenceRef, _Model
 
-NARRATION_VERSION = "2"
+NARRATION_VERSION = "3"
 
 
 class BeatText(_Model):
     beat_id: str
     text: str  # analyst register
     fan: str  # fan register: no numbers, no metric jargon
+    deep: str  # the deep passage (evidence treatise L3), analyst register: positions, averages, distances, the swing
+    deep_fan: str  # the same reasoning for a fan: no numbers, no jargon
 
 
 class StoryOutput(_Model):
@@ -69,13 +71,15 @@ class NarratedBeat(_Model):
     context_fact_id: str | None = None
     text: str
     fan: str
+    deep: str = ""
+    deep_fan: str = ""
     refs: tuple[EvidenceRef, ...]  # copied from the tool outputs
     period_id: int
     t: float  # seconds in the period of the first ref
 
 
 class Narration(_Model):
-    narration_version: Literal["2"] = NARRATION_VERSION
+    narration_version: Literal["3"] = NARRATION_VERSION
     account_id: str
     moment_id: str
     account_hash: str  # sha256 of the account it tells (cache key)

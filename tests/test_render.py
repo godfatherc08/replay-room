@@ -159,7 +159,7 @@ def test_display_rows_follow_the_account(bundles):
 def test_narration_plan_context_and_moments_are_embedded(bundles, accounts):
     for b in bundles.values():
         n = b["narration"]
-        assert n["moment_id"] == b["account"]["moment"]["moment_id"] and n["narration_version"] == "2"
+        assert n["moment_id"] == b["account"]["moment"]["moment_id"] and n["narration_version"] == "3"
         assert [x["beat_id"] for x in n["beats"]] == [x["beat_id"] for x in b["plan"]["beats"]]
         assert b["context"]["moment_id"] == n["moment_id"] and b["editions"] == {}
         cited = {r["action_id"] for x in n["beats"] for r in x["refs"] if r["kind"] == "event"}

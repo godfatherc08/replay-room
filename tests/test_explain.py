@@ -96,7 +96,7 @@ def test_critic_catches_planted_hallucinations(hero, hero_ctx, hero_plan):
     assert validate(good, hero, hero_plan, hero_ctx) == []
     cases = {
         "an invented player": (1, "text", "Smith keeps the move going with a pass.", "'Smith'"),
-        "an invented number": (0, "text", "Sam Adeyemi's pass is worth 0.42 of the chance.", "0.42"),
+        "an invented number": (0, "text", "Sam Adeyemi's pass is worth 0.731 of the chance.", "0.731"),
         "a player from another beat": (1, "fan", "Drew Brandt passes to Novak.", "who is not in this beat's facts"),
         "a goal that never was": (_beat(hero_plan, "lead"), "fan", "Ferraro misses, and the goal is gone.",
                                   "frames it as a goal"),
@@ -179,7 +179,7 @@ class FakeStoryteller:
 def test_foundry_telling_is_checked_and_cites_the_tool_records(hero, hero_ctx, hero_plan, tmp_path):
     fake = FakeStoryteller(_good(hero, hero_plan, hero_ctx))
     n = narrate(hero, context=hero_ctx, plan=hero_plan, renderer=fake, cache_dir=tmp_path)
-    assert (n.source, n.attempts, n.model) == ("foundry", 1, "test-model@prompt-v3")
+    assert (n.source, n.attempts, n.model) == ("foundry", 1, "test-model@prompt-v4")
     assert n.headline.startswith("In short: ")
     (material, feedback), = fake.calls
     assert material == brief(hero, hero_plan, hero_ctx) and feedback == []
@@ -269,3 +269,17 @@ def test_live_foundry_telling_is_grounded(hero, hero_ctx, hero_plan, tmp_path):
     n = narrate(hero, context=hero_ctx, plan=hero_plan, cache_dir=tmp_path)
     assert n.source == "foundry", n.fallback_reason
     assert validate(as_story(n), hero, hero_plan, hero_ctx) == []
+
+
+def test_the_deep_passage_is_positional_and_checked(hero, hero_ctx, hero_plan):
+    story = compose(hero, hero_plan, hero_ctx)
+    flaw = story.beats[_beat(hero_plan, "flaw")]
+    assert "Novak is 16.8 m higher up the pitch than their average in this phase of play (medium confidence, " \
+           "12 possessions)" in flaw.deep
+    assert "pitch control of the middle of the box goes from 0.33 to 0.41 over 6.5 s" in flaw.deep
+    assert flaw.deep.endswith("The chance it all builds, worth 0.152 xG, is denied.")  # the outcome's framing
+    assert "Novak is much higher up the pitch than usual" in flaw.deep_fan and not re.search(r"\d", flaw.deep_fan)
+    bad = json.loads(json.dumps(_good(hero, hero_plan, hero_ctx)))
+    i = _beat(hero_plan, "flaw")
+    bad["beats"][i]["deep"] = flaw.deep.replace("16.8 m", "6.2 m")  # an invented deviation
+    assert any("6.2" in e for e in validate(bad, hero, hero_plan, hero_ctx))

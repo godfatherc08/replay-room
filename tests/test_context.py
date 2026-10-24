@@ -60,3 +60,27 @@ def test_no_baseline_without_the_data(match, moments):
 def test_deterministic(match, moments, contexts):
     m = moments["SYN-0007-goal-1"]
     assert match_context_for(match, m) == contexts["SYN-0007-goal-1"]
+
+
+def test_positional_facts_for_the_story(match, moments, all_accounts):
+    a = all_accounts["SYN-0007-big_chance_saved-3"]
+    ctx = match_context_for(match, a.moment, a)
+    novak = next(p for p in ctx.positions if p.player_id == "NBR-05" and p.frame_id == 2419)
+    assert novak.phase == "defending" and novak.confidence == "medium" and novak.sample_spells == 12
+    assert novak.forward_m == pytest.approx(16.8, abs=0.05)  # stepped up, far from where he usually stands
+    assert novak.deviation_m >= abs(novak.forward_m) and novak.nearest_opponent_id == "EPA-11"
+    swing = next(s for s in ctx.swings if s.label == "LNBR-05")
+    assert (swing.frame_from, swing.frame_to, swing.control_from, swing.control_to) == (2354, 2419, 0.33, 0.41)
+    for p in ctx.positions:  # every average rests on enough possessions, or there is none
+        assert (p.average is None) == (p.confidence is None)
+        if p.confidence is not None:
+            assert p.sample_spells >= MIN_SAMPLES
+    for m in ctx.markings:  # a marking is only someone within marking range
+        assert m.separation_from <= 10.0
+
+
+def test_a_marking_that_breaks(match, all_accounts):
+    a = all_accounts["SYN-0007-turnover_to_shot-1"]  # Sam Brandt loses Sam Adeyemi
+    ctx = match_context_for(match, a.moment, a)
+    m = next(m for m in ctx.markings if m.defender_id == "NBR-02")
+    assert m.man_id == "EPA-09" and not m.held and m.separation_to - m.separation_from >= 2.5

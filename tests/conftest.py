@@ -33,4 +33,4 @@ def all_accounts(match):
 def all_contexts(match, all_accounts):
     from replay_room.context import match_context_for
 
-    return {mid: match_context_for(match, a.moment) for mid, a in all_accounts.items()}
+    return {mid: match_context_for(match, a.moment, a) for mid, a in all_accounts.items()}

@@ -432,8 +432,128 @@ def compose(account: CausalAccount, plan: FramingPlan, context: MatchContext | N
     beats = []
     for b in plan.beats:
         text, fan = teller.beat(b)
-        beats.append(BeatText(beat_id=b.beat_id, text=text, fan=fan))
+        deep, deep_fan = Deep(teller).beat(b)
+        beats.append(BeatText(beat_id=b.beat_id, text=text, fan=fan, deep=deep, deep_fan=deep_fan))
     return StoryOutput(headline=headline, headline_fan=headline_fan, beats=tuple(beats))
+
+
+def beat_positions(facts: Facts, context: MatchContext | None, b: Beat, players: set[str]):
+    """The positional facts of a beat: each of its players at the frame nearest the beat's first record, the
+    control swing over its span (the link's, else the fact's), and the marking it involves."""
+    if context is None:
+        return [], None, None
+    refs = facts.refs(b)
+    t = refs[0].time_seconds if refs[0].kind == "event" else refs[0].timestamp
+    if b.link_id is not None:
+        t = facts.link(b.link_id).evidence[-1].timestamp
+    best: dict[str, object] = {}
+    for p in context.positions:
+        if p.player_id in players and (p.player_id not in best or abs(p.timestamp - t) < abs(best[p.player_id].timestamp - t)):
+            best[p.player_id] = p
+    label = b.link_id or b.contribution_id
+    swing = next((s for s in context.swings if s.label == label), None)
+    marking = next((m for m in context.markings if m.defender_id in players), None)
+    return list(best.values()), swing, marking
+
+
+class Deep:
+    """The deep passage of a beat (evidence treatise L3): where the players were against their averages, how close
+    the nearest opponent was, how the attacking team's control of the shooting spot moved over the beat's span,
+    whether a marking held, and how it fits the move. Every figure is a computed one; a low-confidence average is
+    said to be one, a missing one is not mentioned."""
+
+    def __init__(self, teller: Teller):
+        self.t = teller
+        self.a = teller.a
+        self.ctx = teller.facts.context
+
+    def who(self, pid: str) -> str:
+        return self.t.peek(pid) if pid in self.t.full else ""
+
+    def position(self, p, fan: bool) -> str:
+        P = self.who(p.player_id)
+        if p.average is not None and p.forward_m is not None and abs(p.forward_m) >= 2:
+            way = "higher up the pitch" if p.forward_m > 0 else "deeper"
+            if fan:
+                if p.confidence == "low":
+                    return ""
+                size = "much " if abs(p.forward_m) >= 8 else ""
+                where = f"{P} is {size}{way} than usual in this phase of play"
+            else:
+                where = (f"{P} is {abs(p.forward_m):.1f} m {way} than their average in this phase of play "
+                         f"({p.confidence} confidence, {p.sample_spells} possessions)")
+        else:
+            where = "" if fan else f"{P} is {p.to_goal_m:.1f} m from goal"
+        opp = self.who(p.nearest_opponent_id)
+        if fan:
+            near = ("an opponent tight to them" if p.to_opponent_m < 3 else
+                    "room around them" if p.to_opponent_m > 8 else "")
+            if not near:
+                return f"{where}." if where else ""
+            return f"{where}, with {near}." if where else f"{P} has {near}."
+        else:
+            near = f"{p.to_opponent_m:.1f} m from the nearest opponent" + (f", {opp}" if opp else "")
+        parts = [x for x in (where, near) if x]
+        if not parts:
+            return ""
+        if not where:
+            return f"{P} is {near}."
+        return f"{where}, {near}." if near else f"{where}."
+
+    def swing(self, s, fan: bool) -> str:
+        T = self.t.T
+        zone = s.zone or "the shooting spot"
+        if fan:
+            if abs(s.control_to - s.control_from) < 0.03:
+                return f"{_poss(T)} hold on {zone} barely changes."
+            return f"{_poss(T)} hold on {zone} {'grows' if s.control_to > s.control_from else 'slips'}."
+        span = f"{s.seconds:.1f}" if s.seconds >= 1 else f"{s.seconds:.2f}"  # a value under 1 is written exactly
+        return (f"{_poss(T)} pitch control of {zone} goes from {s.control_from:.2f} to {s.control_to:.2f} "
+                f"over {span} s.")
+
+    def marking(self, m, fan: bool) -> str:
+        D, M = self.who(m.defender_id), self.who(m.man_id)
+        if not D or not M:
+            return ""
+        if fan:
+            return f"{D} {'stays with' if m.held else 'loses'} {M}."
+        return (f"{D} is {m.separation_from:.1f} m from {M} at the start and {m.separation_to:.1f} m at the end: "
+                f"the marking {'holds' if m.held else 'breaks'}.")
+
+    def fit(self, fan: bool) -> str:
+        o = self.a.outcome
+        v = f"{o.value:.3f} {'xG' if o.value_source == 'xg' else 'xT'}"
+        if o.scored:
+            return "It all ends in the goal." if fan else f"It all leads to the goal, from a {v} chance."
+        if o.realized:
+            return "The shot that follows does not go in." if fan else f"The shot that follows, worth {v}, does not go in."
+        return "The chance it all builds is denied." if fan else f"The chance it all builds, worth {v}, is denied."
+
+    def beat(self, b: Beat) -> tuple[str, str]:
+        if b.kind in ("outcome", "counterfactual"):
+            return "", ""
+        players = self.t.facts.players(b, self.t.plan.lead_contribution_id, self.t.plan.flaw_contribution_id)
+        if b.kind == "context":
+            f = self.t.facts.context_fact(b.context_fact_id)
+            text, fan = self.t.context(f)
+            spread = f" The middle half of the match lies between {f.spread[0]:.1f} m and {f.spread[1]:.1f} m." \
+                if f.spread else ""
+            return (f"{text}{spread} {self.fit(False)}", f"{fan} {self.fit(True)}")
+        positions, swing, marking = beat_positions(self.t.facts, self.ctx, b, players)
+        order = {pid: i for i, pid in enumerate(sorted(players, key=lambda p: p not in self.t.full))}
+        positions.sort(key=lambda p: order.get(p.player_id, 99))
+        out = {False: [], True: []}
+        for fan in (False, True):
+            for p in positions[:3]:
+                if (s := self.position(p, fan)):
+                    out[fan].append(s)
+            if marking is not None and (s := self.marking(marking, fan)):
+                out[fan].append(s)
+            if swing is not None:
+                out[fan].append(self.swing(swing, fan))
+            if out[fan]:
+                out[fan].append(self.fit(fan))
+        return " ".join(out[False]), " ".join(out[True])
 
 
 def perspective_headline(account: CausalAccount, plan: FramingPlan, context: MatchContext | None,

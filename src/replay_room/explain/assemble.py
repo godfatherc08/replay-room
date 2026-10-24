@@ -35,7 +35,8 @@ def assemble(output: StoryOutput, account: CausalAccount, plan: FramingPlan, con
         first = refs[0]
         beats.append(NarratedBeat(
             index=i, beat_id=b.beat_id, kind=b.kind, emphasis=b.emphasis, contribution_id=b.contribution_id,
-            link_id=b.link_id, context_fact_id=b.context_fact_id, text=told.text, fan=told.fan, refs=refs,
+            link_id=b.link_id, context_fact_id=b.context_fact_id, text=told.text, fan=told.fan, deep=told.deep,
+            deep_fan=told.deep_fan, refs=refs,
             period_id=account.moment.period_id,
             t=first.time_seconds if first.kind == "event" else first.timestamp,
         ))

@@ -47,7 +47,8 @@ class UngroundedNarration(RuntimeError):
 
 def as_story(n: Narration) -> StoryOutput:
     return StoryOutput(headline=n.headline, headline_fan=n.headline_fan,
-                       beats=tuple(BeatText(beat_id=b.beat_id, text=b.text, fan=b.fan) for b in n.beats))
+                       beats=tuple(BeatText(beat_id=b.beat_id, text=b.text, fan=b.fan, deep=b.deep, deep_fan=b.deep_fan)
+                                   for b in n.beats))
 
 
 def _composed(account: CausalAccount, plan: FramingPlan, context: MatchContext | None, **meta) -> Narration:

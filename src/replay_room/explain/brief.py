@@ -14,7 +14,7 @@ from replay_room.contracts.causal_account import CausalAccount, Contribution
 from replay_room.contracts.context import MatchContext
 from replay_room.contracts.plan import FramingPlan
 from replay_room.contracts.refs import EventRef, FrameRef
-from replay_room.explain.compose import chance_band, compose
+from replay_room.explain.compose import beat_positions, chance_band, compose
 from replay_room.framing.facts import Facts
 
 
@@ -42,7 +42,24 @@ def brief(account: CausalAccount, plan: FramingPlan, context: MatchContext | Non
                                 "may_name": sorted(names[p] for p in facts.players(b, plan.lead_contribution_id,
                                                                                     plan.flaw_contribution_id)),
                                 "carries_a_computed_link": b.link_id is not None,
-                                "draft": {"text": told.text, "fan": told.fan}}
+                                "draft": {"text": told.text, "fan": told.fan, "deep": told.deep,
+                                          "deep_fan": told.deep_fan}}
+        if b.kind not in ("outcome", "counterfactual", "context"):
+            positions, swing, marking = beat_positions(
+                facts, context, b, facts.players(b, plan.lead_contribution_id, plan.flaw_contribution_id))
+            item["positional"] = {
+                "players": [{"player": names.get(p.player_id, p.player_id), "frame": p.frame_id, "phase": p.phase,
+                             "forward_of_average_m": p.forward_m, "lateral_of_average_m": p.lateral_m,
+                             "average_confidence": p.confidence, "average_possessions": p.sample_spells,
+                             "to_ball_m": p.to_ball_m, "to_nearest_opponent_m": p.to_opponent_m,
+                             "nearest_opponent": names.get(p.nearest_opponent_id), "to_goal_m": p.to_goal_m}
+                            for p in positions],
+                "control_swing": None if swing is None else {
+                    "zone": swing.zone, "from": swing.control_from, "to": swing.control_to, "seconds": swing.seconds},
+                "marking": None if marking is None else {
+                    "defender": names.get(marking.defender_id), "man": names.get(marking.man_id),
+                    "separation_from_m": marking.separation_from, "separation_to_m": marking.separation_to,
+                    "held": marking.held}}
         if b.contribution_id and b.kind != "counterfactual":
             item["fact"] = _contribution(facts.contribution(b.contribution_id), names, teams)
         if b.link_id:

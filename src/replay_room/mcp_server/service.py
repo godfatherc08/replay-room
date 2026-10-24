@@ -107,7 +107,7 @@ class EngineService:
             ctx = self._moment(moment_id)
             if not ctx.moment.engine_eligible:
                 raise ValueError(f"{moment_id}: {ctx.moment.type} moments are flagged, not explained")
-            self._contexts[moment_id] = match_context_for(self.match, ctx.moment)
+            self._contexts[moment_id] = match_context_for(self.match, ctx.moment, self.account(moment_id))
         return self._contexts[moment_id]
 
     def narration(self, moment_id: str, mode: Mode = "template", plan: FramingPlan | None = None) -> Narration:

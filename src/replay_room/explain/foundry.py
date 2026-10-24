@@ -27,7 +27,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-PROMPT_VERSION = "3"
+PROMPT_VERSION = "4"
 DEFAULT_TEMPERATURE = 0.4
 
 SYSTEM_PROMPT = """\
@@ -58,6 +58,12 @@ Rules, all mandatory:
    "a goal that didn't happen"); say "the chance".
 10. Names and teams verbatim: every player belongs to the team the brief gives; never move a player
    to the other team and never merge two players' names.
+11. "deep" (and "deep_fan") is the going-deeper passage of a beat: two to four connected sentences
+   built on that beat's "positional" facts: where its players were against their average in this
+   phase (say the confidence), how close the nearest opponent was, how the attacking team's
+   control of the shooting spot moved, whether a marking held, and how it fits the move. Use only
+   those figures; never restate the beat's own number as the depth. Leave it empty when the beat
+   has no positional facts (the draft shows which).
 Return only the JSON object required by the schema.
 """
 
