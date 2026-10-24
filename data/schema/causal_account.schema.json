@@ -793,6 +793,18 @@
           ],
           "title": "Value Source",
           "type": "string"
+        },
+        "zone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Zone"
         }
       },
       "required": [

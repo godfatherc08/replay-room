@@ -61,7 +61,8 @@ adds ``outcome``, the ``evidence`` index, roles ``prevention`` /
 ``attacking_error`` / ``defending``, kind ``chance_denied``, the in-window frame
 check, and makes ``generated_at`` optional so accounts are reproducible. v0.6 adds the
 ``supporting_contribution_id`` (the co-lead beat: the defensive flaw an attacking
-headline points at, or the attacking act that punished a defensive headline) and
+headline points at, or the attacking act that punished a defensive headline),
+``outcome.zone`` (where the terminal action happened, by pitch area) and
 ``links``: off-ball causal links computed from the tracking (whose run took a
 defender away from his man, which zone that opened, which action used it).
 
@@ -116,6 +117,7 @@ class Outcome(_Model):
     realized: bool  # framing: False = prevented ("a goal that didn't happen")
     beneficiary_team_id: str  # the attacking team
     conceding_team_id: str  # the defending team
+    zone: str | None = None  # plain name of where the terminal action happened, e.g. "the middle of the box"
 
 
 class EvidenceIndex(_Model):

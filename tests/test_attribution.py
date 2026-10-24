@@ -94,6 +94,16 @@ def test_links_are_measured_not_inferred(accounts, match):
             assert d.team_id == acc.outcome.conceding_team_id and d.track == "off_ball"
             assert link.player_ids <= {p.player_id for p in acc.participants}
     assert not accounts["SYN-0007-goal-3"].links  # no geometric pattern held: no link is asserted
+    assert a.outcome.zone == link.zone == "the six-yard box"  # the zone he left is where the shot came from
+
+
+def test_zone_names_face_the_attacked_goal():
+    from replay_room.attribution.zones import zone_name
+
+    assert zone_name(100.0, 34.0, True) == zone_name(5.0, 34.0, False) == "the six-yard box"
+    assert zone_name(92.0, 50.0, True) == "the left side of the box"  # home attacks +x: +y is its left
+    assert zone_name(13.0, 18.0, False) == "the left side of the box"  # away attacks -x: -y is its left
+    assert zone_name(75.0, 34.0, True) == "the centre of the final third" and zone_name(40.0, 60.0, True) ==         "the left of midfield"
 
 
 def test_turnover_to_shot(accounts, match):
