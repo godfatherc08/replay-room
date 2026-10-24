@@ -23,7 +23,8 @@ dependencies = [
 dev = ["pytest>=8"]
 # The model agents (Analyst, Storyteller) on Microsoft Agent Framework + Foundry. Imported lazily: the
 # deterministic floors (rule plan, composer) need none of it.
-foundry = ["agent-framework-core>=1.23,<2", "agent-framework-foundry>=1.15,<2", "azure-identity>=1.17"]
+foundry = ["agent-framework-core>=1.23,<2", "agent-framework-foundry>=1.15,<2", "azure-identity>=1.17",
+           "tenacity>=9.1.4,<9.2"]  # the MCP tool the Analyst uses needs it
 agents = ["replay-room[foundry]"]
 
 [project.scripts]

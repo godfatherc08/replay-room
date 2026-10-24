@@ -22,8 +22,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -86,14 +86,24 @@ def foundry_client(config: FoundryConfig) -> Any:
                              credential=DefaultAzureCredential())
 
 
+_LOOP: asyncio.AbstractEventLoop | None = None
+_LOOP_LOCK = threading.Lock()
+
+
+def _model_loop() -> asyncio.AbstractEventLoop:
+    """One long-lived event loop for every model call: the Foundry client keeps connections bound to the loop it
+    first ran on, so a fresh loop per call breaks the retry ("Event loop is closed")."""
+    global _LOOP
+    with _LOOP_LOCK:
+        if _LOOP is None or _LOOP.is_closed():
+            _LOOP = asyncio.new_event_loop()
+            threading.Thread(target=_LOOP.run_forever, name="model-calls", daemon=True).start()
+        return _LOOP
+
+
 def run_sync(coro: Any) -> Any:
-    """Await ``coro`` from sync code, also when an event loop is already running (an MCP server's tool call)."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-    with ThreadPoolExecutor(1) as pool:
-        return pool.submit(asyncio.run, coro).result()
+    """Await ``coro`` from sync code (also from inside a running event loop, e.g. an MCP server's tool call)."""
+    return asyncio.run_coroutine_threadsafe(coro, _model_loop()).result()
 
 
 def run_structured(client: Any, name: str, instructions: str, message: str, schema: type,
