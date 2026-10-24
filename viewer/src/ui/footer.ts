@@ -6,8 +6,7 @@
 // 3. Match events: one dot per event of the moment's window, placed at its time and coloured by its kind
 //    (pass / build-up, defensive error, shot / outcome; the exporter's `timeline` field), with the legend and
 //    window-scoped ticks. A dot seeks the replay to its event and, when the account cites it, opens its proof.
-// 4. Selected moment: the moment's time, its one-line claim (the telling's headline) and its outcome metric
-//    (Fan: the gloss only).
+// 4. Selected moment: one line, its time and its one-line claim (the telling's headline).
 //
 // Four colours and no more: amber owns progress; blue, orange and green are the event kinds.
 
@@ -128,16 +127,13 @@ export function buildFooter(root: HTMLElement, viewer: Viewer, state: UIState, a
   eventBody.append(eventLabels, track, ticks, legend);
   events.append(eventBody);
 
-  // 4. the selected moment
-  const card = el("div", "rr-tl-card");
+  // 4. the selected moment: one line, "which moment am I on" (the claim in full lives on the story card)
+  const card = el("div", "rr-tl-selected");
   const renderCard = () => {
     const h = momentHeader(bundle, state.mode);
-    const o = outcomeView(bundle, state.mode);
-    const top = el("div", "rr-tl-card-top");
-    top.append(el("span", "rr-tl-moment-icon", "◎"), el("span", "rr-tl-label", `Selected moment · ${h.clock}`));
-    const claim = el("p", "rr-tl-claim", h.description ?? o.result);
-    const metric = el("p", "rr-tl-metric", `${bundle.outcome_display.label}${o.metric ? ` · ${o.metric}` : ""}`);
-    card.replaceChildren(top, claim, metric);
+    card.replaceChildren(el("span", "rr-tl-moment-icon", "◎"),
+                         el("span", "rr-tl-label", `Selected moment · ${h.clock}`),
+                         el("span", "rr-tl-claim", `— ${h.description ?? outcomeView(bundle, state.mode).result}`));
   };
   renderCard();
 

@@ -19,13 +19,25 @@ export function playerLabel(bundle: Bundle, playerId: string): string {
   return playerId;
 }
 
+/** A short name that never makes two players look like one: the surname, or "A. Larsen" when another player in
+ *  this moment's bundle shares it (Alex Larsen and Casey Larsen). Display only: the names are the bundle's. */
+export function shortName(bundle: Bundle, playerId: string): string {
+  const all = bundle.teams.flatMap((t) => t.players);
+  const p = all.find((q) => q.player_id === playerId);
+  if (!p) return playerId;
+  const parts = p.name.split(" ");
+  const surname = parts.at(-1)!;
+  const inMoment = new Set([...bundle.account.participants.map((q) => q.player_id),
+                            ...bundle.objects.filter((o) => o.kind === "player").map((o) => o.id)]);
+  const shared = all.some((q) => q.player_id !== playerId && inMoment.has(q.player_id)
+                                 && q.name.split(" ").at(-1) === surname);
+  return shared && parts.length > 1 ? `${parts[0][0]}. ${surname}` : surname;
+}
+
 /** "#11 Ferraro": the on-pitch name tag. */
 export function shortLabel(bundle: Bundle, playerId: string): string {
-  for (const t of bundle.teams) {
-    const p = t.players.find((q) => q.player_id === playerId);
-    if (p) return `#${p.shirt_number} ${p.name.split(" ").at(-1)}`;
-  }
-  return playerId;
+  const p = bundle.teams.flatMap((t) => t.players).find((q) => q.player_id === playerId);
+  return p ? `#${p.shirt_number} ${shortName(bundle, playerId)}` : playerId;
 }
 
 export function teamName(bundle: Bundle, teamId: string): string {

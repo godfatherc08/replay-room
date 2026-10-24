@@ -1,13 +1,13 @@
-// The right panel: the moment (class, outcome as a probability gauge), how the chance was built (every fact as
-// gloss + meter, the raw metric only in Analyst), the decision (chosen vs better option) and the summary.
+// The right panel: the open evidence, how the chance was built (every fact as gloss + meter, the raw metric only
+// in Analyst), the decision (chosen vs better option) and the summary. The moment's claim is not repeated here:
+// the story card over the pitch holds it in full, and the Match Timeline names the selected moment in one line.
 //
 // In Story the stage's step card is the hero, so the chain starts collapsed here; in Explore it is open and
 // is the way in. Every word and number is a field of the bundle; a slot it has nothing for is left out.
 
-import { decisionView, evidenceRows, momentHeader, outcomeView, proofOf, proofView, stepCaption,
-         summary } from "../account";
+import { decisionView, evidenceRows, proofOf, proofView, stepCaption, summary } from "../account";
 import type { Viewer } from "../controller";
-import { button, el, icon, meter, radial } from "./dom";
+import { button, el, icon, meter } from "./dom";
 import type { EvidenceKey, UIState } from "./state";
 
 export interface PanelHandle {
@@ -21,23 +21,6 @@ export function buildPanel(root: HTMLElement, viewer: Viewer, state: UIState, on
   const { bundle } = viewer;
   let open: boolean | null = null; // the chain list: null = follow the view
   let rows = new Map<string, HTMLElement>();
-
-  const moment = (): HTMLElement => {
-    const h = momentHeader(bundle, state.mode);
-    const o = outcomeView(bundle, state.mode);
-    const box = el("section", "rr-block rr-moment");
-    const top = el("div", "rr-card-head");
-    top.append(el("span", "rr-class-chip", h.classLabel), el("span", `rr-chip rr-${h.framing}`, h.framing.toUpperCase()),
-               el("span", "rr-micro rr-push", h.clock));
-    const value = el("div", "rr-outcome");
-    const words = el("div", "rr-outcome-words");
-    words.append(el("span", "rr-outcome-result", o.result), el("span", "rr-outcome-primary", o.primary));
-    if (o.metric) words.append(el("span", "rr-metric", o.metric));
-    value.append(radial(o.fraction, 44), words);
-    box.append(top, value);
-    if (h.description) box.append(el("p", "rr-lede", h.description));
-    return box;
-  };
 
   /** The open proof: what is claimed, what was measured, who, which frame, which records. All from the bundle. */
   const evidence = (): HTMLElement | null => {
@@ -157,7 +140,7 @@ export function buildPanel(root: HTMLElement, viewer: Viewer, state: UIState, on
 
   function render(): void {
     root.dataset.mode = state.mode;
-    root.replaceChildren(...[evidence(), moment(), chain(), decision(), story()]
+    root.replaceChildren(...[evidence(), chain(), decision(), story()]
       .filter((x): x is HTMLElement => x !== null));
     mark();
   }

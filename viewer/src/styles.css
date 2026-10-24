@@ -37,7 +37,7 @@
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; } /* layout rules below must not resurrect hidden elements */
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
              font: 400 var(--fs-body)/1.4 Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
              -webkit-font-smoothing: antialiased; }
 button, select { font: inherit; color: inherit; cursor: pointer; }
@@ -45,9 +45,12 @@ button:disabled { cursor: default; opacity: 0.55; }
 h1, h2, p, ol { margin: 0; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-#app { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr) 360px;
-       grid-template-rows: 56px minmax(0, 1fr) auto auto;
-       grid-template-areas: "top top" "stage side" "ribbon side" "foot foot"; }
+/* one fixed viewport, never a page scroll: the top bar, the pitch taking every remaining pixel (with the panel
+   beside it, scrolling on its own), and the docked bottom: the chain ribbon and the Match Timeline */
+#app { display: grid; height: 100vh; height: 100dvh; overflow: hidden;
+       grid-template-columns: minmax(0, 1fr) clamp(260px, 26vw, 360px);
+       grid-template-rows: 48px minmax(0, 1fr) auto auto;
+       grid-template-areas: "top top" "stage side" "ribbon ribbon" "foot foot"; }
 
 /* ------------------------------------------------------------------ type helpers */
 .rr-display { font-size: var(--fs-display); font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
@@ -199,22 +202,22 @@ h1, h2, p, ol { margin: 0; }
 .rr-meter.rr-outcome .rr-meter-fill { background: var(--accent); }
 
 /* ------------------------------------------------------------------ ribbon */
-.rr-ribbon { grid-area: ribbon; position: relative; padding: var(--s2) var(--s4) var(--s2); border-top: 1px solid var(--line);
+.rr-ribbon { grid-area: ribbon; position: relative; padding: var(--s1) var(--s4) 2px; border-top: 1px solid var(--line);
              background: var(--panel); }
-.rr-ribbon-track { position: absolute; top: 52px; height: 2px; background: var(--line-2); margin: 0 var(--s4); }
+.rr-ribbon-track { position: absolute; top: 36px; height: 2px; background: var(--line-2); margin: 0 var(--s4); }
 .rr-ribbon-fill { height: 100%; width: 0; background: var(--accent); box-shadow: 0 0 8px rgba(251, 191, 36, 0.6); }
 .rr-ribbon-nodes { position: relative; list-style: none; padding: 0; display: grid; }
 .rr-node { position: relative; display: grid; justify-items: center; }
-.rr-node + .rr-node::before { content: ""; position: absolute; left: -4px; top: 39px; width: 6px; height: 6px;
+.rr-node + .rr-node::before { content: ""; position: absolute; left: -4px; top: 29px; width: 6px; height: 6px;
                               border-top: 2px solid var(--line-2); border-right: 2px solid var(--line-2); transform: rotate(45deg); }
 .rr-node.rr-done + .rr-node::before, .rr-node.rr-current + .rr-node::before { border-color: var(--accent); }
 .rr-node-btn { display: grid; justify-items: center; gap: 2px; border: 0; background: none; padding: 0; width: 100%; }
-.rr-node-barbox { height: 24px; width: 6px; display: flex; align-items: flex-end; }
+.rr-node-barbox { height: 16px; width: 6px; display: flex; align-items: flex-end; }
 .rr-node-bar { width: 6px; border-radius: 2px 2px 0 0; opacity: 0.55; }
 .rr-node-bar.rr-pos { background: var(--pos); }
 .rr-node-bar.rr-neg { background: var(--neg); }
 .rr-node-bar.rr-none { height: 0; }
-.rr-node-dot { --team: var(--muted); width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%;
+.rr-node-dot { --team: var(--muted); width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%;
                background: var(--card); border: 2px solid var(--team); color: var(--muted);
                transition: background 200ms, color 200ms, transform 200ms; }
 .rr-node-outcome .rr-node-dot { border-color: var(--accent); color: var(--accent); }
@@ -235,7 +238,6 @@ h1, h2, p, ol { margin: 0; }
 .rr-side { grid-area: side; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--s2);
            padding: var(--s3); border-left: 1px solid var(--line); background: var(--panel); }
 .rr-block { display: grid; gap: var(--s3); padding: var(--s4); border-radius: 10px; background: var(--card); border: 1px solid var(--line); }
-.rr-moment .rr-lede { font-size: var(--fs-body); }
 .rr-section-toggle { display: flex; align-items: center; justify-content: space-between; border: 0; background: none;
                      padding: 0; text-align: left; }
 .rr-section-toggle svg { color: var(--muted); transition: transform 200ms; }
@@ -267,7 +269,7 @@ h1, h2, p, ol { margin: 0; }
 /* ------------------------------------------------------------------ footer */
 /* the Match Timeline: header, replay progress, match events, the selected moment (evidence-treatise §5.3).
    Four colours: amber owns progress; blue / orange / green are the event kinds. */
-.rr-footer { grid-area: foot; display: grid; gap: var(--s2); padding: var(--s2) var(--s4) var(--s3);
+.rr-footer { grid-area: foot; display: grid; gap: var(--s1); padding: var(--s1) var(--s4) var(--s2);
              border-top: 1px solid var(--line); background: var(--panel); --ev-build: #3b82f6; --ev-error: #f97316;
              --ev-shot: #22c55e; }
 .rr-tl-head { display: flex; justify-content: space-between; align-items: baseline; }
@@ -275,13 +277,13 @@ h1, h2, p, ol { margin: 0; }
 .rr-tl-clock { font-size: var(--fs-label); color: var(--muted); font-variant-numeric: tabular-nums;
                font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .rr-tl-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s3); align-items: center; }
-.rr-tl-events { grid-template-columns: minmax(0, 1fr); padding-left: calc(32px + var(--s3)); }
-.rr-tl-body { display: grid; gap: var(--s1); min-width: 0; }
+.rr-tl-events { grid-template-columns: minmax(0, 1fr); padding-left: calc(28px + var(--s3)); }
+.rr-tl-body { display: grid; gap: 2px; min-width: 0; }
 .rr-tl-labels { display: flex; justify-content: space-between; align-items: center; gap: var(--s2); }
 .rr-tl-label { font-size: var(--fs-label); font-weight: 500; color: var(--text-2); }
 .rr-tl-hint { font-size: var(--fs-micro); color: var(--muted); }
 .rr-tl-right { display: inline-flex; align-items: center; gap: var(--s2); }
-.rr-play { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; border: 0;
+.rr-play { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; border: 0;
            background: var(--accent); color: var(--accent-ink); cursor: pointer; }
 .rr-speed { background: var(--card); border: 1px solid var(--line-2); border-radius: var(--radius);
             padding: 0 var(--s1); font-size: var(--fs-label); color: var(--text-2); }
@@ -304,12 +306,11 @@ h1, h2, p, ol { margin: 0; }
 .rr-tl-legend { display: flex; gap: var(--s4); font-size: var(--fs-micro); color: var(--text-2); }
 .rr-tl-key { display: inline-flex; align-items: center; gap: var(--s1); }
 .rr-tl-dot-key { width: 8px; height: 8px; border-radius: 50%; }
-.rr-tl-card { display: grid; gap: 2px; padding: var(--s2) var(--s3); border-radius: var(--radius); background: var(--card);
-              border: 1px solid var(--line); }
-.rr-tl-card-top { display: flex; align-items: center; gap: var(--s2); }
-.rr-tl-moment-icon { color: var(--accent); font-size: var(--fs-body); }
-.rr-tl-claim { font-size: var(--fs-body); font-weight: 500; color: var(--text); }
-.rr-tl-metric { font-size: var(--fs-label); color: var(--muted); }
+/* the selected moment: one line ("which moment am I on"), never a second card of the claim */
+.rr-tl-selected { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; font-size: var(--fs-label);
+                  color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rr-tl-moment-icon { color: var(--accent); }
+.rr-tl-selected .rr-tl-claim { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 
 /* ------------------------------------------------------------------ motion */
 @keyframes rr-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
@@ -319,11 +320,17 @@ h1, h2, p, ol { margin: 0; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
-@media (max-width: 980px) {
-  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 56vh auto auto auto;
-         grid-template-areas: "top" "stage" "ribbon" "foot" "side"; height: auto; }
-  .rr-topbar { grid-template-columns: 1fr; gap: var(--s2); padding: var(--s2) var(--s4); justify-items: center; }
-  .rr-logo, .rr-top-right { justify-self: stretch; justify-content: space-between; }
-  .rr-footer { grid-template-columns: 1fr; padding: var(--s2) var(--s4); }
-  .rr-side { border-left: 0; }
+/* the panel toggle shows only where the panel becomes a drawer */
+.rr-panel-toggle { display: none; }
+@media (max-width: 760px) {
+  /* narrow: still one fixed viewport; the panel becomes a drawer over the pitch instead of stacking below it */
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto;
+         grid-template-areas: "top" "stage" "ribbon" "foot"; }
+  .rr-topbar { grid-template-columns: 1fr auto; gap: var(--s2); padding: var(--s1) var(--s4); }
+  .rr-scoreline { display: none; }
+  .rr-side { position: fixed; z-index: 5; top: 48px; right: 0; bottom: 0; width: min(360px, 88vw);
+             transform: translateX(100%); transition: transform 200ms ease-out; box-shadow: -16px 0 32px rgba(0, 0, 0, 0.4); }
+  #app.rr-side-open .rr-side { transform: none; }
+  .rr-panel-toggle { display: inline-flex; }
+  .rr-tl-hint { display: none; }
 }

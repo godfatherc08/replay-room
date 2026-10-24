@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { evidenceRows, firstSentence, highlightedPlayers, matchClock, stepPlayers } from "../src/account";
+import { evidenceRows, firstSentence, highlightedPlayers, matchClock, shortName, stepPlayers } from "../src/account";
 import { type SceneLike, Viewer } from "../src/controller";
 import type { Sample } from "../src/motion";
 import { type Overlay, stepOverlays, type Vec2 } from "../src/overlays";
@@ -348,7 +348,7 @@ describe("app shell", () => {
     expect(v.clock.frameId).toBe(2419); // the frame the link ends at
     expect(v.story.playing).toBe(false);
     expect(scene.highlighted).toEqual(["NBR-05", "EPA-11", "EPA-08"]); // Novak, the runner, the passer
-    expect(scene.labels).toEqual(["#5 Novak", "#11 Ferraro", "#8 Hale"]);
+    expect(scene.labels).toEqual(["#5 J. Novak", "#11 J. Ferraro", "#8 R. Hale"]); // Quinn Novak, Morgan Ferraro, Alex Hale also play
     expect(scene.overlays.length).toBeGreaterThan(0); // the link stays drawn
     const box = roots.side.querySelector<HTMLElement>(".rr-evidence")!;
     const text = box.textContent!;
@@ -418,10 +418,8 @@ describe("app shell", () => {
     expect([...f.querySelectorAll(".rr-tl-key")].map((k) => k.textContent))
       .toEqual(["Pass / build-up", "Defensive error", "Shot / outcome"]);
     expect(f.querySelectorAll(".rr-tl-ticks span")).toHaveLength(5);
-    const card = f.querySelector(".rr-tl-card")!;
-    expect(card.querySelector(".rr-tl-label")!.textContent).toBe("Selected moment · 04:03");
-    expect(card.querySelector(".rr-tl-claim")!.textContent).toBe("Ferraro misses a good chance for Eastport.");
-    expect(card.querySelector(".rr-tl-metric")!.textContent).toBe("15% chance of scoring · xG 0.152");
+    const line = f.querySelector(".rr-tl-selected")!; // one line: which moment, and its claim
+    expect(line.textContent).toBe("◎Selected moment · 04:03— Ferraro misses a good chance for Eastport.");
     // a cited event's dot seeks to it and opens its proof
     const pass = dots.find((d) => d.dataset.event === "ev00220")!;
     pass.click();
@@ -430,8 +428,23 @@ describe("app shell", () => {
     expect(roots.side.querySelector(".rr-evidence")).not.toBeNull();
   });
 
-  it("the timeline's moment card drops the raw figure in Fan", () => {
-    const { roots } = shell(fixture(), { mode: "fan" });
-    expect(roots.footer.querySelector(".rr-tl-metric")!.textContent).toBe("15% chance of scoring");
+  it("the moment's claim is shown in full once, on the story card; nowhere else repeats it as a card", () => {
+    const { b, roots } = shell();
+    const claim = "Ferraro misses a good chance for Eastport.";
+    expect(roots.stage.querySelector(".rr-title-card .rr-lede")!.textContent).toBe(claim);
+    expect(roots.side.textContent).not.toContain(claim); // the panel no longer repeats the moment
+    expect(roots.side.querySelector(".rr-moment")).toBeNull();
+    expect(roots.footer.querySelectorAll(".rr-tl-selected")).toHaveLength(1); // the timeline names it in one line
+    expect(b.narration.headline).toContain(claim);
+  });
+
+  it("short labels tell players with the same surname apart (display only)", () => {
+    const b = fixture();
+    expect(shortName(b, "NBR-05")).toBe("J. Novak"); // Jordan Novak, with Quinn Novak (EPA-02) on the pitch
+    expect(shortName(b, "EPA-11")).toBe("J. Ferraro"); // Morgan Ferraro plays for Northbridge
+    const other = fixture(); // a roster where the surname is unique: the surname alone
+    other.teams.flatMap((t) => t.players).find((p) => p.name === "Morgan Ferraro")!.name = "Morgan Reyes";
+    expect(shortName(other, "EPA-11")).toBe("Ferraro");
+    expect(b.account.participants.find((p) => p.player_id === "NBR-05")!.name).toBe("Jordan Novak"); // data unchanged
   });
 });

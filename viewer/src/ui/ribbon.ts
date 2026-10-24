@@ -6,7 +6,7 @@
 // have their own icons. The outcome and the counterfactual close the chain. A fill sweeps along the track as
 // Story plays; the current node pulses. Clicking a node shows that step.
 
-import { linkOf, meaningOf, playerLabel, stepCaption } from "../account";
+import { linkOf, meaningOf, shortName, stepCaption } from "../account";
 import { type Bundle, FACT_KINDS, type StoryStep } from "../bundle";
 import type { Viewer } from "../controller";
 import { el, icon } from "./dom";
@@ -24,7 +24,7 @@ function nodeIcon(bundle: Bundle, step: StoryStep): string {
   return "fork";
 }
 
-const surname = (bundle: Bundle, id: string) => playerLabel(bundle, id).split(" ").at(-1) ?? "";
+const surname = (bundle: Bundle, id: string) => shortName(bundle, id); // "A. Larsen" when a surname is shared
 
 export function buildRibbon(root: HTMLElement, viewer: Viewer, state: UIState, onPick: (index: number) => void): RibbonHandle {
   const { bundle, story } = viewer;

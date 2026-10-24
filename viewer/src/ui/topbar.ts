@@ -5,7 +5,7 @@ import { matchClock, scoreAt } from "../account";
 import type { Bundle } from "../bundle";
 import type { Clock } from "../timeline";
 import { teamColor } from "../overlays";
-import { el } from "./dom";
+import { button, el } from "./dom";
 import type { Mode, UIState, View } from "./state";
 
 /** A plain shield in the team's shirt colour (the name sits beside it): decoration, not a crest. */
@@ -75,7 +75,13 @@ export function buildTopbar(root: HTMLElement, bundle: Bundle, clock: Clock, sta
     picker.append(o);
   }
   picker.addEventListener("change", () => onPick?.(picker.value));
-  right.append(views.root, modes.root, picker);
+  const panel = button("rr-seg-btn rr-panel-toggle", "Show the panel", "Panel");
+  panel.addEventListener("click", () => {
+    const app = root.closest("#app");
+    const open = app?.classList.toggle("rr-side-open") ?? false;
+    panel.setAttribute("aria-expanded", String(open));
+  });
+  right.append(views.root, modes.root, picker, panel);
   root.append(logo, line, right);
 
   const sync = () => {

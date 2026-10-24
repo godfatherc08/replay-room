@@ -13,6 +13,8 @@ import type { Vec2 } from "./overlays";
 import { PitchScene } from "./scene";
 import { buildUI } from "./ui";
 
+const MAX_DPR = 2; // sharper than this costs frame rate for little gain
+
 function byId(id: string): HTMLElement {
   const e = document.getElementById(id);
   if (!e) throw new Error(`missing #${id}`);
@@ -39,7 +41,7 @@ async function start(): Promise<void> {
   }
   const bundle = await loadBundle(url);
   const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, antialias: true });
-  engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 2));
+  engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, MAX_DPR));
   const scene = new PitchScene(engine, bundle, { labels: true, stadium: params.get("stadium") !== "0" });
   scene.camera.attachControl(canvas, true);
   const viewer = new Viewer(bundle, scene);
@@ -84,7 +86,16 @@ async function start(): Promise<void> {
     ui.sync();
     scene.render();
   });
-  window.addEventListener("resize", () => engine.resize());
+  // the renderer follows the canvas's own box (layout changes, the panel drawer, window resizes), so the backing
+  // buffer always matches the CSS size and the camera's aspect is the canvas's
+  // and the backing store is scaled by the device pixel ratio (clamped at 2 for the frame rate), re-read on the same
+  // path so moving the window to another screen stays sharp
+  const fit = () => {
+    engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, MAX_DPR));
+    engine.resize();
+  };
+  new ResizeObserver(fit).observe(byId("stage"));
+  window.addEventListener("resize", fit);
   (window as unknown as { replayRoom: unknown }).replayRoom = { viewer, scene, bundle, ui };
 }
 
