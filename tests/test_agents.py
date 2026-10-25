@@ -208,7 +208,7 @@ def test_cli_prints_the_end_to_end_run(fixture_dir, monkeypatch):
 def test_the_analysts_mcp_tools_serve_the_match_being_explained(engine, fixture_dir, all_accounts, monkeypatch):
     from types import SimpleNamespace
 
-    import agent_framework
+    agent_framework = pytest.importorskip("agent_framework")  # the optional [foundry] extra; CI runs without it
 
     from replay_room.agents import analyst as analyst_mod
 
