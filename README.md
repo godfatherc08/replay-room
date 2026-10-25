@@ -10,7 +10,7 @@ specific event or tracking frame you can jump to on the pitch. Nothing is made u
 engine computes the facts. AI agents decide how to tell them to an analyst or a fan, and a code-based
 Critic rejects anything the engine did not compute.
 
-▶ **[Demo video](YOUTUBE_URL)** · Built for the Microsoft × Premier League "Inside the Game" hackathon.
+▶ **[Demo video](https://youtu.be/3CeD7jcq4k0)** · Built for the Microsoft × Premier League "Inside the Game" hackathon.
 
 ## What it does
 
