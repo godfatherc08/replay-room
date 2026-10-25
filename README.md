@@ -10,7 +10,7 @@ specific event or tracking frame you can jump to on the pitch. Nothing is made u
 engine computes the facts. AI agents decide how to tell them to an analyst or a fan, and a code-based
 Critic rejects anything the engine did not compute.
 
-▶ **[Demo video](https://youtu.be/3CeD7jcq4k0)** · Built for the Microsoft × Premier League "Inside the Game" hackathon.
+▶ **[Demo video](https://youtu.be/3CeD7jcq4k0)** · **[Live demo on Azure](https://victorious-flower-0b0191c0f.1.azurestaticapps.net/?moment=SYN-0055-big_chance_saved-2)** · Built for the Microsoft × Premier League "Inside the Game" hackathon.
 
 ## What it does
 
@@ -91,7 +91,7 @@ available in that frame.
 | **MCP**: the engine as an MCP server | The engine's four tools over stdio or Streamable HTTP. The Analyst calls them as its tool (`MCPStdioTool`). |
 | **Azure MCP Server** | Reads the match feed from a **Fabric Eventhouse** (Kusto) and stored accounts from **Cosmos DB**. |
 | **Azure AI Translator** / **Azure AI Content Safety** | The Editor's language step / the Critic's final safety screen. |
-| **Babylon.js** | The 3D viewer. It builds as a static site for **Azure Static Web Apps**. |
+| **Babylon.js** + **Azure Static Web Apps** | The 3D viewer, live at [victorious-flower-0b0191c0f.1.azurestaticapps.net](https://victorious-flower-0b0191c0f.1.azurestaticapps.net/). GitHub Actions deploys it with the pre-computed moment bundles baked in, so there is no backend and no secrets. |
 | **GitHub Actions** | CI: tests, MCP smoke test, agents end to end, bundle export, viewer build. |
 
 Each Azure service is used when configured and falls back to a local path when it is not. The full
