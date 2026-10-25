@@ -42,4 +42,3 @@ jobs:
           app_location: viewer/dist
           api_location: ""
           skip_app_build: true
-          skip_api_build: true
