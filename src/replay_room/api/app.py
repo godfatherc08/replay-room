@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from contextlib import asynccontextmanager
 from functools import cached_property
 from typing import Any
 
@@ -95,11 +96,21 @@ async def bundle(request: Request) -> JSONResponse:
         return JSONResponse({"error": f"{moment_id} is not an explainable moment of this match"}, status_code=404)
 
 
+@asynccontextmanager
+async def warm(_: Starlette):
+    """Build the engine and every account in the background as the server starts: a cold start then overlaps
+    the first request instead of preceding it."""
+    if os.environ.get("REPLAY_ROOM_WARM", "1") == "1":
+        threading.Thread(target=lambda: studio().accounts, name="warm", daemon=True).start()
+    yield
+
+
 def create_app() -> Starlette:
     origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
     return Starlette(
         routes=[Route("/healthz", healthz), Route("/api/bundle/{moment_id}", bundle)],
         middleware=[Middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET"])],
+        lifespan=warm,
     )
 
 

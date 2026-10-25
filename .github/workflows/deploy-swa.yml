@@ -33,6 +33,7 @@ jobs:
         run: npm run build
         env:
           BUNDLES_DIR: demo-data
+          VITE_API_BASE: ${{ vars.API_BASE }}  # the live backend's public URL, for ?live=1 (empty: static only)
       - name: Add the Static Web Apps config
         run: cp staticwebapp.config.json dist/
       - uses: Azure/static-web-apps-deploy@v1
