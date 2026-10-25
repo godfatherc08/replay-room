@@ -1,0 +1,16 @@
+.git
+.github
+.idea
+.venv
+**/__pycache__
+*.pyc
+viewer
+tests
+docs
+prompts
+data/corpus
+data/accounts
+data/narrations
+data/archive
+data/fixtures/synthetic_match_01
+img.png

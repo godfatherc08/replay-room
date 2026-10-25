@@ -2,18 +2,41 @@
 // and open Story Mode on its title card, the camera framed on the whole move.
 //
 // URL parameters: ?mode=fan, ?view=explore, ?jump=<contribution> (Explore, at that fact),
-// ?step=<n> (Story, paused at step n, 1-based), ?play=1 (start the analysis), ?stadium=0 (the bare pitch).
+// ?step=<n> (Story, paused at step n, 1-based), ?play=1 (start the analysis), ?stadium=0 (the bare pitch),
+// ?live=1 (told now by the live backend, when the build has VITE_API_BASE; the baked-in bundle otherwise).
 
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { CreateScreenshot } from "@babylonjs/core/Misc/screenshotTools";
 
-import { type IndexEntry, loadBundle } from "./bundle";
+import { type Bundle, type IndexEntry, loadBundle } from "./bundle";
 import { Viewer } from "./controller";
 import type { Vec2 } from "./overlays";
 import { PitchScene } from "./scene";
 import { buildUI } from "./ui";
 
 const MAX_DPR = 2; // sharper than this costs frame rate for little gain
+const LIVE_TIMEOUT_MS = 150_000; // a cold container plus the model agents and their Critic retries
+
+// ?live=1: the agents tell the moment now, on the live backend (VITE_API_BASE, set at build time). Null when it
+// is not configured, not asked for, or fails or times out: the caller then loads the baked-in bundle.
+async function liveBundle(entry: IndexEntry | undefined, params: URLSearchParams, side: HTMLElement): Promise<Bundle | null> {
+  const api = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, "");
+  if (!api || !entry || params.get("live") !== "1" || params.get("bundle")) return null;
+  side.textContent = "Asking the live agents on Azure to tell this moment…";
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), LIVE_TIMEOUT_MS);
+  try {
+    const bundle = await loadBundle(`${api}/api/bundle/${encodeURIComponent(entry.moment_id)}`,
+                                    (input, init) => fetch(input, { ...init, signal: abort.signal }));
+    console.info("[ReplayRoom] live telling", bundle.narration?.source, (bundle as { live?: unknown }).live);
+    return bundle;
+  } catch (err) {
+    console.warn("[ReplayRoom] live backend unavailable; using the baked-in bundle", err);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function byId(id: string): HTMLElement {
   const e = document.getElementById(id);
@@ -39,7 +62,7 @@ async function start(): Promise<void> {
     side.textContent = "No bundles found. Run: python -m replay_room.render data/fixtures/synthetic_match_02";
     return;
   }
-  const bundle = await loadBundle(url);
+  const bundle = (await liveBundle(entry, params, side)) ?? (await loadBundle(url));
   const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, antialias: true });
   engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, MAX_DPR));
   const scene = new PitchScene(engine, bundle, { labels: true, stadium: params.get("stadium") !== "0" });

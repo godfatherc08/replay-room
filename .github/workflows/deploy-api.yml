@@ -1,0 +1,47 @@
+name: Deploy backend (Azure Container Apps)
+
+# The live backend (python -m replay_room.api): build the image, push it to Azure Container Registry, roll the
+# container app onto it. Signs in to Azure with GitHub OIDC (a federated credential): no stored password or key.
+# The app reaches Foundry with its own managed identity.
+
+on:
+  push:
+    branches: [master]
+    paths: ["src/**", "pyproject.toml", "requirements-ci.txt", "Dockerfile", "data/models/**",
+            "data/fixtures/synthetic_match_02/**", ".github/workflows/deploy-api.yml"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  REGISTRY: replayroomqcl7.azurecr.io
+  IMAGE: replayroom-api
+  RESOURCE_GROUP: rg-replayroom
+  CONTAINER_APP: replayroom-api
+
+jobs:
+  deploy:
+    name: Build, push and roll out
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and push the image
+        run: |
+          az acr login --name "${REGISTRY%%.*}"
+          docker build -t "$REGISTRY/$IMAGE:${{ github.sha }}" -t "$REGISTRY/$IMAGE:latest" .
+          docker push --all-tags "$REGISTRY/$IMAGE"
+      - name: Roll the container app onto it (skipped until the app exists)
+        run: |
+          if az containerapp show -n "$CONTAINER_APP" -g "$RESOURCE_GROUP" -o none 2>/dev/null; then
+            az containerapp update -n "$CONTAINER_APP" -g "$RESOURCE_GROUP" --image "$REGISTRY/$IMAGE:${{ github.sha }}" -o none
+          else
+            echo "no container app yet: image pushed only"
+          fi
