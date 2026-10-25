@@ -1,0 +1,45 @@
+name: Deploy viewer (Azure Static Web Apps)
+
+# The live demo: the viewer plus the pre-computed bundles in viewer/demo-data/ (accounts, framing plans and
+# Critic-checked tellings exported by `python -m replay_room.render`). Static only: no backend, no secrets.
+# Refresh the demo data: re-run the render, then copy data/accounts/ over viewer/demo-data/.
+
+on:
+  push:
+    branches: [master]
+    paths: ["viewer/**", ".github/workflows/deploy-swa.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: viewer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - run: npm ci
+      - name: Build the static site with the demo bundles
+        run: npm run build
+        env:
+          BUNDLES_DIR: demo-data
+      - name: Add the Static Web Apps config
+        run: cp staticwebapp.config.json dist/
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: viewer/dist
+          api_location: ""
+          skip_app_build: true
+          skip_api_build: true

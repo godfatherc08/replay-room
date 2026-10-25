@@ -1,0 +1,380 @@
+{
+  "schema_version": "0.6",
+  "account_id": "acc-SYN-0055-goal-2",
+  "game_id": "SYN-0055",
+  "moment": {
+    "moment_id": "SYN-0055-goal-2",
+    "type": "goal",
+    "engine_eligible": true,
+    "game_id": "SYN-0055",
+    "period_id": 2,
+    "t_event": 100.2,
+    "attacking_team_id": "NBR",
+    "defending_team_id": "EPA",
+    "team_id": null,
+    "key_event_ref": {
+      "kind": "event",
+      "action_id": 168,
+      "original_event_id": "ev00237",
+      "period_id": 2,
+      "time_seconds": 100.2
+    },
+    "key_player_id": "NBR-08",
+    "detail": null,
+    "is_own_goal": false,
+    "outcome_ref": {
+      "kind": "event",
+      "action_id": 168,
+      "original_event_id": "ev00237",
+      "period_id": 2,
+      "time_seconds": 100.2
+    },
+    "outcome_scored": true,
+    "outcome_xg": 0.07794797284012575,
+    "secondary_types": [
+      "turnover_to_shot"
+    ],
+    "possession_id": 25,
+    "chain": [
+      {
+        "kind": "event",
+        "action_id": 161,
+        "original_event_id": "ev00227",
+        "period_id": 2,
+        "time_seconds": 90.6
+      },
+      {
+        "kind": "event",
+        "action_id": 162,
+        "original_event_id": "ev00229",
+        "period_id": 2,
+        "time_seconds": 91.9
+      },
+      {
+        "kind": "event",
+        "action_id": 163,
+        "original_event_id": "ev00230",
+        "period_id": 2,
+        "time_seconds": 93.4
+      },
+      {
+        "kind": "event",
+        "action_id": 164,
+        "original_event_id": "ev00231",
+        "period_id": 2,
+        "time_seconds": 95.0
+      },
+      {
+        "kind": "event",
+        "action_id": 165,
+        "original_event_id": "ev00232",
+        "period_id": 2,
+        "time_seconds": 96.2
+      },
+      {
+        "kind": "event",
+        "action_id": 166,
+        "original_event_id": "ev00233",
+        "period_id": 2,
+        "time_seconds": 97.6
+      },
+      {
+        "kind": "event",
+        "action_id": 167,
+        "original_event_id": "ev00234",
+        "period_id": 2,
+        "time_seconds": 98.6
+      },
+      {
+        "kind": "event",
+        "action_id": 168,
+        "original_event_id": "ev00237",
+        "period_id": 2,
+        "time_seconds": 100.2
+      }
+    ],
+    "chain_start": "regain",
+    "turnover_event_ref": {
+      "kind": "event",
+      "action_id": 160,
+      "original_event_id": "ev00226",
+      "period_id": 2,
+      "time_seconds": 89.7
+    },
+    "contested_action_ids": [],
+    "t_start": 89.6,
+    "t_end": 102.2,
+    "window": {
+      "period_id": 2,
+      "frame_start": 2397,
+      "frame_end": 2523,
+      "t_start": 89.6,
+      "t_end": 102.2
+    }
+  },
+  "outcome": {
+    "ref": {
+      "kind": "event",
+      "action_id": 168,
+      "original_event_id": "ev00237",
+      "period_id": 2,
+      "time_seconds": 100.2
+    },
+    "value": 0.07794797284012575,
+    "value_source": "xg",
+    "scored": true,
+    "realized": true,
+    "beneficiary_team_id": "NBR",
+    "conceding_team_id": "EPA",
+    "zone": "the right side of the box"
+  },
+  "teams": [
+    {
+      "team_id": "NBR",
+      "name": "Northbridge FC"
+    },
+    {
+      "team_id": "EPA",
+      "name": "Eastport Athletic"
+    }
+  ],
+  "participants": [
+    {
+      "player_id": "NBR-03",
+      "name": "Riley Adeyemi",
+      "team_id": "NBR",
+      "shirt_number": 3,
+      "position": "DF"
+    },
+    {
+      "player_id": "NBR-08",
+      "name": "Morgan Ferraro",
+      "team_id": "NBR",
+      "shirt_number": 8,
+      "position": "MF"
+    },
+    {
+      "player_id": "NBR-07",
+      "name": "Robin Mensah",
+      "team_id": "NBR",
+      "shirt_number": 7,
+      "position": "FW"
+    },
+    {
+      "player_id": "NBR-11",
+      "name": "Quinn Byrne",
+      "team_id": "NBR",
+      "shirt_number": 11,
+      "position": "FW"
+    },
+    {
+      "player_id": "EPA-11",
+      "name": "Jordan Ferraro",
+      "team_id": "EPA",
+      "shirt_number": 11,
+      "position": "FW"
+    }
+  ],
+  "headline_contribution_id": "a164",
+  "supporting_contribution_id": "a160",
+  "contributions": [
+    {
+      "contribution_id": "a160",
+      "rank": 1,
+      "track": "on_ball",
+      "kind": "action_value",
+      "role": "defensive_error",
+      "action": "pass_fail",
+      "signal": null,
+      "player_id": "EPA-11",
+      "team_id": "EPA",
+      "t": 89.7,
+      "effect": 0.111251,
+      "metrics": {
+        "value": -0.111251,
+        "vaep": -0.111251,
+        "delta_xt": -0.057416,
+        "lost_ball": 1.0
+      },
+      "shapley_share": null,
+      "evidence": [
+        {
+          "kind": "event",
+          "action_id": 160,
+          "original_event_id": "ev00226",
+          "period_id": 2,
+          "time_seconds": 89.7
+        }
+      ]
+    },
+    {
+      "contribution_id": "a164",
+      "rank": 2,
+      "track": "on_ball",
+      "kind": "action_value",
+      "role": "build_up",
+      "action": "pass",
+      "signal": null,
+      "player_id": "NBR-11",
+      "team_id": "NBR",
+      "t": 95.0,
+      "effect": 0.048536,
+      "metrics": {
+        "value": 0.048536,
+        "vaep": 0.048536,
+        "delta_xt": 0.013982,
+        "pass_completion": 0.725949
+      },
+      "shapley_share": null,
+      "evidence": [
+        {
+          "kind": "event",
+          "action_id": 164,
+          "original_event_id": "ev00231",
+          "period_id": 2,
+          "time_seconds": 95.0
+        }
+      ]
+    },
+    {
+      "contribution_id": "a162",
+      "rank": 3,
+      "track": "on_ball",
+      "kind": "action_value",
+      "role": "build_up",
+      "action": "pass",
+      "signal": null,
+      "player_id": "NBR-03",
+      "team_id": "NBR",
+      "t": 91.9,
+      "effect": 0.046167,
+      "metrics": {
+        "value": 0.046167,
+        "vaep": 0.046167,
+        "delta_xt": 0.01575,
+        "pass_completion": 0.721511
+      },
+      "shapley_share": null,
+      "evidence": [
+        {
+          "kind": "event",
+          "action_id": 162,
+          "original_event_id": "ev00229",
+          "period_id": 2,
+          "time_seconds": 91.9
+        }
+      ]
+    },
+    {
+      "contribution_id": "a168",
+      "rank": 4,
+      "track": "on_ball",
+      "kind": "action_value",
+      "role": "finish",
+      "action": "shot",
+      "signal": null,
+      "player_id": "NBR-08",
+      "team_id": "NBR",
+      "t": 100.2,
+      "effect": -0.022107,
+      "metrics": {
+        "xg": 0.077948,
+        "xt_start": 0.100055,
+        "delta_xt": -0.022107
+      },
+      "shapley_share": null,
+      "evidence": [
+        {
+          "kind": "event",
+          "action_id": 168,
+          "original_event_id": "ev00237",
+          "period_id": 2,
+          "time_seconds": 100.2
+        }
+      ]
+    },
+    {
+      "contribution_id": "a165",
+      "rank": 5,
+      "track": "on_ball",
+      "kind": "action_value",
+      "role": "build_up",
+      "action": "dribble",
+      "signal": null,
+      "player_id": "NBR-07",
+      "team_id": "NBR",
+      "t": 96.2,
+      "effect": 0.020172,
+      "metrics": {
+        "value": 0.020172,
+        "vaep": 0.020172,
+        "delta_xt": 0.012583
+      },
+      "shapley_share": null,
+      "evidence": [
+        {
+          "kind": "event",
+          "action_id": 165,
+          "original_event_id": "ev00232",
+          "period_id": 2,
+          "time_seconds": 96.2
+        }
+      ]
+    },
+    {
+      "contribution_id": "a167",
+      "rank": 6,
+      "track": "on_ball",
+      "kind": "action_value",
+      "role": "build_up",
+      "action": "dribble",
+      "signal": null,
+      "player_id": "NBR-08",
+      "team_id": "NBR",
+      "t": 98.6,
+      "effect": 0.016928,
+      "metrics": {
+        "value": 0.016928,
+        "vaep": 0.016928,
+        "delta_xt": 0.022203
+      },
+      "shapley_share": null,
+      "evidence": [
+        {
+          "kind": "event",
+          "action_id": 167,
+          "original_event_id": "ev00234",
+          "period_id": 2,
+          "time_seconds": 98.6
+        }
+      ]
+    }
+  ],
+  "counterfactuals": [],
+  "links": [],
+  "evidence": {
+    "events": [
+      160,
+      162,
+      164,
+      165,
+      167,
+      168
+    ],
+    "frames": []
+  },
+  "provenance": {
+    "pipeline_version": "0.1.0",
+    "source": "synthetic-v1",
+    "models": {
+      "xt": "xt-16x12@c3-g2-n200-s1000",
+      "xg": "xg-logit@c3-g2-n200-s1000",
+      "pass": "pass-logit@c3-g2-n200-s1000",
+      "pitch_control": "fernandez-bornn-influence",
+      "vaep": "vaep-hgb@c3-g2-n200-s1000"
+    },
+    "effect_threshold": 0.01,
+    "counterfactual_margin": 0.05,
+    "generated_at": "2026-10-24T19:49:52+00:00"
+  }
+}
