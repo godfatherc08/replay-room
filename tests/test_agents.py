@@ -193,13 +193,36 @@ def test_sources_fall_back_locally(fixture_dir, monkeypatch):
     assert isinstance(picked.source, LocalAccountStore) and "COSMOS_ACCOUNT" in picked.fallback_reason
 
 
-def test_cli_prints_the_end_to_end_run(monkeypatch):
+def test_cli_prints_the_end_to_end_run(fixture_dir, monkeypatch):
     monkeypatch.delenv("FOUNDRY_PROJECT_ENDPOINT", raising=False)
     out = io.StringIO()
-    assert main(["--moment", "SYN-0007-goal-1", "--focus-team", "NBR"], out=out) == 0
+    assert main(["--match", str(fixture_dir), "--moment", "SYN-0007-goal-1", "--focus-team", "NBR"], out=out) == 0
     text = out.getvalue()
     assert "SCOUT MENU" in text and "TRACE" in text and "FAN EDITION (en, against)" in text
     assert "What went wrong for Northbridge" in text
     out = io.StringIO()
-    main(["--moment", "SYN-0007-goal-1", "--json"], out=out)
+    main(["--match", str(fixture_dir), "--moment", "SYN-0007-goal-1", "--json"], out=out)
     assert json.loads(out.getvalue())["plan"]["lead_contribution_id"] == "a35"
+
+
+def test_the_analysts_mcp_tools_serve_the_match_being_explained(engine, fixture_dir, all_accounts, monkeypatch):
+    from types import SimpleNamespace
+
+    import agent_framework
+
+    from replay_room.agents import analyst as analyst_mod
+
+    orch = Orchestrator(engine, FixtureStream(fixture_dir), mode="foundry")
+    assert orch.analyst.match_dir == fixture_dir  # handed over from the engine, not the server's default
+    seen = {}
+
+    class Tool:
+        def __init__(self, *args, env=None, **kw):
+            seen["env"] = env
+
+    monkeypatch.setattr(agent_framework, "MCPStdioTool", Tool)
+    monkeypatch.setattr(analyst_mod, "run_structured", lambda *a, **kw: {})
+    config = SimpleNamespace(temperature=0.0)
+    propose = analyst_mod.foundry_proposer(config, use_mcp=True, client=object(), match_dir=fixture_dir)
+    propose(all_accounts[HERO], None, [])
+    assert seen["env"] == {"REPLAY_ROOM_MATCH": str(fixture_dir)}

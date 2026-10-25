@@ -36,7 +36,7 @@ async function start(): Promise<void> {
   const entry = moments.find((m) => m.moment_id === wanted) ?? moments.find((m) => !m.realized) ?? moments[0];
   const url = params.get("bundle") ?? (entry ? `./${entry.bundle}` : null);
   if (!url) {
-    side.textContent = "No bundles found. Run: python -m replay_room.render data/fixtures/synthetic_match_01";
+    side.textContent = "No bundles found. Run: python -m replay_room.render data/fixtures/synthetic_match_02";
     return;
   }
   const bundle = await loadBundle(url);

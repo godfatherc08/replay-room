@@ -91,3 +91,12 @@ def test_facts_resolve_refs_and_players(all_accounts, all_contexts):
     assert all(r.kind in ("event", "frame") for r in facts.refs(flaw))
     with pytest.raises(UnresolvedBeat):
         facts.refs(Beat(beat_id="z", kind="link", link_id="nope"))
+
+
+def test_a_plan_that_drops_the_computed_counterfactual_is_rejected(all_accounts, all_contexts):
+    a, ctx = all_accounts[HERO], all_contexts[HERO]
+    assert a.counterfactuals  # the hero's better option
+    plan = rules_plan(a, ctx)
+    dropped = plan.model_copy(update={"beats": [b for b in plan.beats if b.kind != "counterfactual"]})
+    errors = check_plan(dropped, a, ctx)
+    assert errors and "must be told" in errors[-1]

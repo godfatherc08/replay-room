@@ -7,8 +7,8 @@ points at the defensive flaw and the context deviation as supporting beats.
 
 * ``mode="foundry"``: a Foundry model on Microsoft Agent Framework proposes the
   plan (structured output ``PlanProposal``). With ``use_mcp`` it is handed the
-  engine's MCP server as its tools and fetches the account and context itself;
-  otherwise the facts are given inline. Every proposal goes to the Critic
+  engine's MCP server as its tools (on the same match, ``match_dir``) and fetches
+  the account and context itself; otherwise the facts are given inline. Every proposal goes to the Critic
   (``framing.check_plan``); a rejected one is re-proposed with the violations,
   up to ``MAX_ATTEMPTS``, then the rule plan is used.
 * ``mode="rules"``: ``framing.rules_plan``, no model.
@@ -24,6 +24,7 @@ import json
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import Field
@@ -118,8 +119,10 @@ class AnalystReport:
     fallback_reason: str | None = None
 
 
-def foundry_proposer(config: FoundryConfig, use_mcp: bool = True, client: Any | None = None) -> Proposer:
-    """An Agent Framework agent on Foundry that proposes a plan; with ``use_mcp`` it calls the engine's MCP tools."""
+def foundry_proposer(config: FoundryConfig, use_mcp: bool = True, client: Any | None = None,
+                     match_dir: str | Path | None = None) -> Proposer:
+    """An Agent Framework agent on Foundry that proposes a plan; with ``use_mcp`` it calls the engine's MCP tools,
+    served on ``match_dir`` (the MCP server's default match when None)."""
     chat = client or foundry_client(config)
 
     def propose(account: CausalAccount, context: MatchContext | None, feedback: Sequence[str]) -> dict[str, Any]:
@@ -128,6 +131,7 @@ def foundry_proposer(config: FoundryConfig, use_mcp: bool = True, client: Any | 
 
             tools = [MCPStdioTool(name="replay_room_engine", command=sys.executable,
                                   args=["-m", "replay_room.mcp_server"], allowed_tools=["attribute", "match_context"],
+                                  env={"REPLAY_ROOM_MATCH": str(match_dir)} if match_dir else None,
                                   load_prompts=False)]
             message = (f"Plan how to tell moment {account.moment.moment_id}. Call attribute and match_context for it "
                        f"first, then return the plan.")
@@ -145,10 +149,11 @@ def foundry_proposer(config: FoundryConfig, use_mcp: bool = True, client: Any | 
 
 class Analyst:
     def __init__(self, mode: Literal["foundry", "rules"] = "foundry", proposer: Proposer | None = None,
-                 use_mcp: bool = True):
+                 use_mcp: bool = True, match_dir: str | Path | None = None):
         self.mode = mode
         self.proposer = proposer
         self.use_mcp = use_mcp
+        self.match_dir = match_dir  # the match its MCP tools serve: the one being explained
         self.model: str | None = None
 
     def plan(self, account: CausalAccount, context: MatchContext | None = None) -> tuple[FramingPlan, AnalystReport]:
@@ -159,7 +164,7 @@ class Analyst:
         if proposer is None:
             try:
                 config = FoundryConfig.from_env()
-                proposer = foundry_proposer(config, self.use_mcp)
+                proposer = foundry_proposer(config, self.use_mcp, match_dir=self.match_dir)
                 self.model = config.deployment
             except FoundryUnavailable as e:
                 return floor, AnalystReport(source="rules", fallback_reason=str(e))

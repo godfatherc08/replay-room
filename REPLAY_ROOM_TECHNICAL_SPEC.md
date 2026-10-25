@@ -1,254 +1,392 @@
-# Replay Room — Technical Specification (v0.2)
+# Replay Room — Technical Specification (v1.0)
 
-**Project:** The Synthetic Match Insights Engine for Premier League Studio (Microsoft × Premier League "Inside the Game" Hackathon)
-**Author:** Chimaobi · **Date:** 2026-10-20 · **Status:** build-ordered draft
-**v0.2 change:** the synthetic feed carries **player positions and position changes (velocity)**. Off-ball claims are now grounded, 3D positions are **observed not modeled**, and the counterfactual what-if is promoted from stretch to core. Stage 4 and §3/§5 updated accordingly.
+**Project:** Replay Room, for the Microsoft × Premier League "Inside the Game" hackathon (solo entry)
+**Author:** Chimaobi · **Date:** 2026-10-25 · **Status:** as built (submission)
+
+Replay Room turns a football match into its talking-point moments. It rebuilds each one as an explorable
+3D replay and explains **why** it happened. The explanation is grounded in the match's own events and
+player tracking. This document describes the system as it exists in the repository. Where a Microsoft
+service is a configured path with a local fallback rather than a running deployment, it says so.
+
+Two pieces of engineering carry the product:
+
+1. **A multi-agent studio around a deterministic core** (§2). Five agents (Scout, Analyst, Storyteller,
+   Critic, Editor) decide *how* a moment is told. A Critic written as code makes sure no agent ever adds
+   a fact.
+2. **A metric and attribution layer built on published football research** (§3): xT, VAEP, xG, a pass
+   model, and player-influence pitch control. These are fused into a two-track causal account that is
+   validated on held-out games and bound to event ids and tracking frames.
 
 ---
 
-## 0. The one architectural principle that wins or loses this
+## 1. The governing rule
 
-The Reactor reference session splits the system into **deterministic code** and **Foundry (LLM) logic**. Take that split seriously — it is the whole game:
+> **Agents orchestrate; they never invent causality. The engine computes every fact and every causal link.**
 
-> **Causality and numbers are computed deterministically. The language model only verbalizes a pre-computed account. It never decides *why* anything happened.**
+A language model asked *why* a goal happened writes fluent, confident punditry that is often wrong.
+Replay Room splits the work instead:
 
-Why this is the winning bet:
+- The **engine** computes the facts. It detects the moments, values every action, computes pitch control
+  from the real positions, and runs the two-track attribution. It also measures the off-ball causal links
+  and the match-context baselines. All of this is deterministic code.
+- The **agents** choose which computed facts to tell, in what order, with what emphasis, in which register
+  and language. A model agent's output is a list of ids, or prose that is checked against the tool
+  outputs. It is never a new fact.
+- The **Critic is code.** It checks every model output against the engine's outputs. A rejected output is
+  regenerated with the violations fed back, up to three times. After that, a deterministic floor is used.
+  Raw model output never reaches the screen.
 
-- The product's claim is "explain *why* a moment happened." If an LLM free-writes the "why," it hallucinates plausible-but-false tactical stories, and judges and football fans can smell generic punditry instantly. That is how most of the 391 other entries will lose.
-- If instead the "why" is a ranked, evidence-linked account produced by **value-function credit assignment plus spatial (pitch-control) reasoning** on real positions, and the LLM is a *renderer* of that account, every sentence is traceable to an event, a frame, and a number. That is the moat.
+The decision record is [ADR 0001](docs/adr/0001-agency-around-a-deterministic-core.md).
 
-Hard wall: **stages 1–4 and the analytic part of 7 are deterministic; only stage 6 touches a model, and it is constrained to narrate stage-4 output.**
+---
 
-### Build order and five-stage mapping
+## 2. Standout 1 — the multi-agent architecture
 
-| # | Component | Spec stage | Deterministic / Model |
+### 2.1 Pipeline
+
+```
+  match feed ── Fabric Eventhouse via Azure MCP (kusto)  ─or─  fixture events.jsonl
+        │
+     Scout ── detect_moments ──► described menu (explainable / described only)
+        │ a moment is picked
+        ▼
+  ┌──────── Replay Room engine, exposed as an MCP server (stdio / Streamable HTTP) ────────┐
+  │ detect_moments → the match's moments, explained and flagged                            │
+  │ attribute      → CausalAccount: ranked, evidence-bound facts, headline, supporting     │
+  │                  flaw, computed off-ball links, grounded counterfactual                │
+  │ match_context  → per-match baselines for the defending team and how this moment       │
+  │                  deviates                                                              │
+  │ narrate        → a Critic-checked telling                                              │
+  └────────────────────────────────────────────────────────────────────────────────────────┘
+        │
+     Analyst  (Foundry model on Agent Framework; calls attribute + match_context over MCP)
+        │  FramingPlan = ordered ids only
+     Critic ── plan check ── reject → re-plan (≤3) → rule plan
+        │
+     Storyteller  (Foundry model on Agent Framework, structured output)
+        │  analyst + fan register per beat
+     Critic ── story check ── reject → retell (≤3) → deterministic composer
+        │  + Azure AI Content Safety screen (when configured)
+     Editor ── analyst / fan · club focus · player focus · Azure AI Translator (re-checked)
+        │
+     bundle JSON ──► Babylon.js 3D viewer (Story Mode plays the plan)
+```
+
+Code: `src/replay_room/agents/` (`scout`, `analyst`, `critic`, `editor`, `orchestrator`, `engine`,
+`sources`, `azure`), `src/replay_room/framing/` (plan rules and plan check), `src/replay_room/explain/`
+(Storyteller, composer, story check), `src/replay_room/mcp_server/`.
+
+### 2.2 The agents
+
+| Agent | Does | Grounded by | Model | Deterministic floor |
+|---|---|---|---|---|
+| **Scout** | Reads the feed in order. As the stream clock passes each detected moment, it adds the moment to a menu with a one-line description. Flagged moments (offside, VAR, injury, substitution) and red cards in the feed are *described only*, with the reason they are not explained. | `detect_moments` + the stream | none | — (is deterministic) |
+| **Analyst** | Builds the `FramingPlan`: which facts, in which order, with which emphasis (`lead` / `support` / `detail`). | `attribute`, `match_context` (fetched itself over MCP, or given inline) | Foundry, via Agent Framework, structured output `PlanProposal` | `framing.rules_plan` |
+| **Storyteller** | Writes each beat of the checked plan in two registers: analyst (one computed number woven in as meaning) and fan (no numbers, no jargon). Also writes an optional "deep" passage from positional facts. | the *story brief*: the plan with every record resolved, plus the composer's draft as the reference | Foundry, via Agent Framework, structured output `StoryOutput` | `explain.compose` |
+| **Critic** | Checks the plan and the story. Also checks edited and translated editions, and runs the Content Safety screen. | the tool outputs | none (code) | — |
+| **Editor** | Personalizes a checked telling: register, club focus (the headline from that side, re-checked), player focus (marks that player's beats `highlighted`), language. | the checked telling | Azure AI Translator (optional) | English, unchanged |
+
+The **orchestrator** (`agents/orchestrator.py`) is plain Python. It runs Scout → pick → `attribute` +
+`match_context` → Analyst → Critic → Storyteller → Critic → Content Safety → Editor. It records every hop
+(agent, action, what came back, any fallback reason) in a `trace`, which `python -m replay_room.agents`
+prints.
+
+### 2.3 How "never invent" is enforced
+
+1. **Agents point; they do not author.** A framing plan is a list of ids: contribution, link,
+   context-fact and counterfactual ids. `framing.check_plan` rejects any id that no tool returned. It also
+   rejects any record told twice, and any plan that breaks the framing rules:
+   - the account's headline is the single lead;
+   - a realized story leads with the attack before any flaw, link or context beat;
+   - a `flaw` beat must be a defending-team contribution with a positive effect;
+   - context appears only where it deviates;
+   - there is exactly one outcome beat;
+   - every computed counterfactual is told.
+
+   `tests/test_agents.py::test_a_planted_invented_fact_is_rejected_by_the_critic` proves the refusal.
+2. **Links are computed or absent.** Causal-link language ("drags", "runs past", "opened", "because", …)
+   is allowed only in a beat that carries a link that `attribution.links` measured on the tracking.
+   Elsewhere, facts stand side by side.
+3. **Each beat speaks for its own records** (`explain.validate`):
+   - a passage may name only the players in its own beat's records;
+   - every number must equal a computed value, at the precision written;
+   - every capitalised word must be an allowed name, team or term;
+   - a player is never placed on the wrong team;
+   - a moment that did not score is never called "the goal";
+   - the fan register contains no digits and no metric jargon;
+   - the analyst register uses no vague magnitudes ("about", "roughly").
+4. **Editions keep their facts.** After editing or translation, `Critic.review_edition` checks that every
+   passage still carries exactly the numbers and player names of its source. A failed check keeps the
+   English.
+5. **Every model step has a floor.** Rule plan, composer, local sources. The whole pipeline runs with no
+   Foundry, no Azure and no network. That is how CI runs it. The trace records which floor was used and why.
+6. **Context supports, never causes.** Baselines come from the same match. Each one carries its sample
+   size and a confidence grade (`low` / `medium` / `high`), and there is no baseline below 5 samples.
+
+### 2.4 The grounding loop, concretely
+
+```
+for attempt in 1..3:
+    output = model(brief, feedback)          # Analyst: PlanProposal  · Storyteller: StoryOutput
+    errors = critic(output, account, context) # check_plan  · validate
+    if not errors: return output
+    feedback = errors                         # the violations go back into the next prompt
+return deterministic_floor(account, context)  # rules_plan · compose  (also Critic-checked)
+```
+
+A network error, an auth failure or a malformed response also goes straight to the floor.
+Tellings are cached in `data/narrations/<game>/<moment>.<mode>.json`. The cache key covers the account's
+and the plan's content hashes, the prompt version and the deployment. A cached telling is re-validated
+before use, and fallbacks are never cached as `foundry` output.
+
+---
+
+## 3. Standout 2 — the metric layer and causal attribution, grounded in football research
+
+The facts the agents tell come from established football-analytics methods. These are implemented,
+trained and validated here, not approximated by a model. Training is
+`python -m replay_room.metrics.train` on a cached 200-match synthetic corpus, loaded through the same
+feed adapter a real feed uses. The games are split deterministically 60/20/20 (train/tune/test), and the
+test games are scored exactly once, after every modelling choice is made.
+
+### 3.1 The valuation primitives (`metrics/`)
+
+| Metric | Research | What it measures | How it is built here |
 |---|---|---|---|
-| 1 | Event ingest + replay clock | (a) ingest | Deterministic |
-| 2 | Moment detector (goals first) | (b) interpret | Deterministic |
-| 3 | Metric layer (xT / VAEP / xG + spatial) | (b) interpret | Deterministic (ML models, no generation) |
-| 4 | Causal attribution + evidence trace | (c) explain — *the edge* | Deterministic |
-| 5 | 3D moment viewer | (d) render | Deterministic |
-| 6 | Explanation renderer | (c)+(d) | **Model (grounded)** |
-| 7 | Personalization modes | (e) personalize | Deterministic view-transforms (+ model render) |
+| **Expected Threat (xT)** | Karun Singh, *Introducing Expected Threat*, 2018 | The probability that possession in a zone leads to a goal, as the fixed point of a Markov model of shooting and moving | `socceraction.xthreat`, 16×12 grid. Delta-xT is extended beyond successful moves: a failed move costs −xT(start), a regain earns +xT(location), a shot is worth xG − xT(start). Thin zones borrow the nearest supported zone at the same distance from goal. |
+| **VAEP** | Decroos, Bransen, Van Haaren, Davis, *Actions Speak Louder than Goals*, KDD 2019 (Best Paper) | Every on-ball action's change in P(score) minus its change in P(concede) over the next actions | socceraction's SPADL game-state features, labels and value formula. P_score and P_concede are `HistGradientBoostingClassifier`s (the paper's gradient-boosted-tree family), chosen by Brier score on the tune games. **Shipped only if both models reach AUC ≥ 0.70 and beat the base-rate Brier score on held-out games.** Otherwise delta-xT is the authoritative on-ball signal. |
+| **Expected Goals (xG)** | standard geometric shot model | Shot → goal probability | Logistic regression on distance to goal, goal-mouth angle and a header flag, validated on held-out games. Penalties use a fixed 0.76. |
+| **Pass completion** | — | P(pass completes); "pass difficulty" = 1 − completion | Logistic regression on what the passer could *see* at the pass instant: the intended receiver led by their velocity, lane gap, receiver gap, and pressure. It trains only on feed-named targets. Inferring targets from where the ball ended leaks the outcome (measured: held-out AUC 0.80 inferred vs 0.64 true). |
+| **Pitch control** | Fernández & Bornn, *Wide Open Spaces*, MIT Sloan 2018; Spearman, *Beyond Expected Goals*, MIT Sloan 2018 | Which team controls each point of the pitch at each instant | Closed-form, with no training. A Voronoi baseline plus a player-influence model: each player is a bivariate normal centred 0.5 s ahead along their velocity, stretched with speed and widened by distance to the ball. Control = sigmoid(Σ own − Σ opponent) on a grid. |
 
-### Azure service map
+**Orientation guard** (`metrics/orientation.py`). xT, xG and pass value accept only left-to-right
+actions. VAEP refuses them, because socceraction orients each game state itself and would otherwise flip
+away actions twice. Passing the wrong frame raises a `TypeError` instead of producing silently wrong
+numbers.
 
-| Stage | Microsoft / Azure service | Role |
-|---|---|---|
-| Ingest (1) | **Fabric Real-Time Intelligence — Eventstream** (or Azure Event Hubs) | Capture the synthetic event + tracking feed as a stream |
-| Store/query (1–3) | **Fabric Eventhouse (KQL database)** | Time-series store; fast temporal + spatial queries |
-| Detect (2) | **KQL querysets + Data Activator** (or Azure Functions) | Possession-chain + moment triggers |
-| Models (3) | **Azure Machine Learning** | Train/register/deploy xT, VAEP, xG, pass, pitch-control models |
-| Attribution (4) | Python service on **Azure Container Apps (ACA)** | Deterministic credit assignment + spatial attribution; no model |
-| State (4) | **Azure Cosmos DB** | Store the structured causal account per moment |
-| 3D render (5) | **Babylon.js** (open-source WebGL/WebGPU engine originated at Microsoft) on **Azure Static Web Apps** / ACA | Faithful explorable 3D scene from real positions |
-| Explanation (6) | **Microsoft Foundry — Foundry Agent Service** (Responses API, `azure-ai-projects`) + a Foundry model; **Foundry IQ** grounding | Narrate the account under a JSON schema |
-| Personalize (7) | Foundry prompt variants + frontend view state; (stretch) **Azure AI Translator** | Analyst vs casual, club/player focus, language |
-| Auth | **Microsoft Entra ID** (+ Entra Agent ID) | Identity |
-| Dev | **GitHub + GitHub Copilot** | Repo, CI, pair-programming |
+### 3.2 From metrics to causes — two-track attribution (`attribution/`)
 
-> **Prefer ACA over AKS** everywhere. Solo ⇒ no Kubernetes overhead.
+No dataset carries a ground-truth "cause" label, so causes are not *discovered*. Contributions are
+**ranked by their measured effect on the outcome probability**. The account explains the outcome value
+**V**, the ex-ante value of the terminal action (its xG). It never uses "goal = 1". Every `effect` is a
+change in the **attacking team's** P(outcome), so a defender's lapse counts as a positive effect: a
+failure to prevent.
 
----
+- **Track A, on-ball** (`on_ball.py`): each chain action's authoritative value (VAEP, else delta-xT),
+  signed towards the attack.
+  - The terminal action is valued *ex ante* with delta-xT. Its VAEP would read the realised result
+    (about +0.8 for a goal) and leak the outcome into its own explanation.
+  - A penalty's foul is worth V − xT at its spot.
+  - A prevented outcome adds `chance_denied` (effect −V), credited to the save, block or miss.
+- **Track B, off-ball** (`off_ball.py`): the attack's control of the key spot in each frame,
+  `space(f) = Σ control·g / Σ g` with a Gaussian `g` around the spot. A player's share is
+  `V·(space(f) − space(f without p))`, recomputed with that player's influence removed (the per-player
+  sum reproduces the surface exactly, which is checked). A player's fact is the largest rise in their
+  share over the window:
+  - attacker: `space_creation`, with signal `run_in_behind`, `run_into_space` or `found_space`;
+  - defender: `space_conceded`, or `marking_break` if they also lost their nearest attacker, bound to the
+    first frame where the two separated at speed.
 
-## 1. Event ingest + replay clock
+  Goalkeepers get no off-ball facts.
+- **Fusion** (`fuse.py`): a fact is evidence only if |effect| ≥ 0.01. The top 10 by |effect| are kept,
+  plus the conceding side's best failure if the cut dropped it. All facts are ranked on one scale. The
+  headline and supporting beat are chosen by |effect| × recency:
+  - **prevented:** the headline is `chance_denied`, supported by the failure that let the chance happen;
+  - **realized:** the headline is the best attacking act, supported by the defensive flaw. The flaw takes
+    the headline (`primary_cause`) only when it outscores the attacking act 2×.
+- **Off-ball causal links** (`links.py`), measured on the tracking and never inferred. For each kept
+  defensive off-ball fact, four patterns are tested in order:
+  - `decoy_run`: a runner took the defender away from their man;
+  - `dragged_out`: the defender followed a runner and vacated the zone;
+  - `run_past`: an attacker ran past the defender into the space they left;
+  - `lost_man`: the defender's man drifted free towards the spot.
 
-**What it does.** Reads the synthetic feed — **on-ball events + per-frame player positions and velocities** — and plays it back against a scrubbable clock.
+  Each link names the marked man, the runner, the zone and the action that used the space. If no pattern
+  holds, there is no link, and nobody may assert one.
+- **Grounded counterfactual** (`counterfactual.py`): at the assist and finish frames, every real option is
+  valued from the actual positions. A pass is worth its completion probability × xT at the receiving point
+  (the receiver led by their velocity); a shot is worth xG there. A "better option existed" is emitted only
+  when the best alternative beats the choice by ≥ 0.05, listing up to 3 alternatives.
+- **Match context** (`context/`): defending-team baselines from the same match.
+  - `counter_press`: how often they win the ball back after losing it;
+  - `line_height`: metres from goal line to the deepest outfield defender;
+  - `marking_distance`: how close the nearest defender was to each attacker.
 
-**Approach.**
-- **Normalize on-ball events to SPADL** (Soccer Player Action Description Language, from the VAEP paper): `(game, team, player, start_x, start_y, end_x, end_y, type, result, bodypart, time)`. The `socceraction` library (ML-KULeuven) ships SPADL converters, xT and VAEP.
-- **Keep the tracking frames alongside** — a time-indexed table of every player's `(x, y, vx, vy)`. SPADL drives the value models; the tracking table drives the spatial models (§3e) and the 3D render (§5).
-- **Replay** = order by timestamp, emit on a pausable/seekable clock; replay the log through the stream to behave "live."
+  Each has a sample size, confidence, and an IQR-based deviation flag. Positional facts (positions against
+  phase averages, distances, marking held or broken, control swing at the spot) feed the "deep" telling.
 
-**Microsoft tools.** Fabric **Eventstream** ingests; **Eventhouse/KQL** stores both events and tracking frames (KQL is strong at the temporal/spatial joins you'll need). Azure Event Hubs + in-memory replay is the lighter alternative.
+Shapley shares are not computed (`shapley_share` stays null).
 
-**Data contract.** Events as above; tracking as `(timestamp, player_id, team_id, x, y, vx, vy)`. Match metadata. **Confirmed:** positions + position-changes are present, so off-ball reasoning is grounded.
+### 3.3 The causal account — the single contract
 
----
+`contracts/causal_account.py` (schema v0.6; JSON Schema in `data/schema/causal_account.schema.json`,
+regenerated by `python -m replay_room.contracts`). Fields: `moment`, `outcome` (V, realized/prevented,
+teams, zone), `teams`, `participants`, `headline_contribution_id`, `supporting_contribution_id`,
+`contributions` (rank, track, kind, role, `action` or `signal`, player, effect, metrics, `evidence`),
+`counterfactuals`, `links`, `evidence` (index of every event id and frame cited), `provenance` (models,
+threshold, margin).
 
-## 2. Moment detector (goals first)
+Invariants are enforced on construction:
 
-**What it does.** Flags talking points and captures the **possession chain** (+ the tracking window around it) leading into each.
+- only engine-eligible moments get an account;
+- every on-ball fact cites an event and every off-ball fact a frame inside the window;
+- ranks run 1..n by non-increasing |effect|;
+- only the headline may be `primary_cause`;
+- every counterfactual beats the choice by the margin;
+- every referenced player is a participant;
+- every link points at a defending off-ball contribution.
 
-**Approach.**
-- **Segment into possessions** (needed by xT/VAEP anyway).
-- **MVP = goals only.** The goal is trivial to flag; the *moment* is the chain + the ~10–15s tracking window before it.
-- **Detection** = temporal/threshold rules over computed state (shot after a possession-value spike, pressure/possession swing), as **KQL queries + Data Activator**, or Azure Functions.
-
-**Why.** The chain + its tracking window is the unit stages 4–5 operate on.
-
----
-
-## 3. Metric layer — the valuation primitives
-
-Computes the **cited numbers** every explanation points at. On-ball value (3a–3d) plus — now — off-ball spatial value (3e).
-
-### 3a. Expected Goals (xG)
-Shot→goal probability from shot features (location, angle, body part). Logistic/GBM.
-
-### 3b. Expected Threat (xT) — *Karun Singh, 2018* (after Sarah Rudd)
-Grid over the pitch; each zone's value = probability possession there leads to a goal, learned as a Markov process iterated to convergence:
-```
-xT(z) = shoot_prob(z)·xG(z) + move_prob(z)·Σ_z' T(z→z')·xT(z')
-move_value = xT(end_zone) − xT(start_zone)
-```
-`socceraction.xthreat`.
-
-### 3c. VAEP — *Decroos, Bransen, Van Haaren, Davis, KDD 2019* (Best Paper)
-Values **every** on-ball action by its change in scoring/conceding probability over the next *k* actions (two XGBoost models over SPADL states):
-```
-VAEP(action) = [P_score(S_after) − P_score(S_before)] − [P_concede(S_after) − P_concede(S_before)]
-```
-This signed delta is the raw material of stage 4's **on-ball track**.
-
-### 3d. Pass-difficulty / completion
-Pass-completion probability (distance, angle, pressure, zones) → the spec's "pass difficulty rating." GBM.
-
-### 3e. Off-ball spatial models — *now in scope (positions + velocities present)*
-Because every player's position and velocity is known each frame, the off-ball game is observable:
-- **Pitch control** — who owns which area at each instant. Baseline: **Voronoi** regions. Better: **player-influence-area** models weighted by position, velocity, and distance to ball — **Fernández & Bornn, "Wide Open Spaces" (MIT Sloan 2018)** or **Spearman, "Beyond Expected Goals" (MIT Sloan 2018)**. Open implementations exist (Laurie Shaw / FriendsOfTracking).
-- **Space value & creation/occupation** — weight controlled space by its threat (tie to xT); an off-ball run that drags a marker and opens valuable space is a creditable contribution (Fernández-Bornn space-creation measure).
-- **Marking / assignment** — nearest-defender and assignment tracking: who is responsible for whom, and whether the assignment held (distance-to-man over time).
-- **Velocity-derived signals** — runs (acceleration into space), tracking failures (a defender not matching his man's run/direction — "ball-watching"), and the spec's **speed/distance indicators** (section ii), essentially for free.
-
-These feed stage 4's **off-ball track**.
-
-**Microsoft tools.** Train/register/deploy the learned models in **Azure Machine Learning**; pitch-control is mostly closed-form geometry computed in the attribution service.
+The account is self-contained: the agents and the viewer may say only what is in it.
 
 ---
 
-## 4. Causal attribution + evidence trace — **THE EDGE**
+## 4. Microsoft integration
 
-**What it does.** For a moment, produce a **ranked, evidence-linked causal account** fusing on-ball and off-ball contributions, each tied to a concrete record and a number.
+Each Azure dependency sits behind an interface with a local implementation. `available` / `reason`
+decide which one runs, and the trace records the choice.
 
-### The method (and why it's defensible)
+| Microsoft technology | What it does in the pipeline | Where | Status in the repo |
+|---|---|---|---|
+| **Microsoft Foundry** (project, Responses API) + **Microsoft Agent Framework** | Runs the two model agents. Each is an Agent Framework `Agent` on a `FoundryChatClient`, constrained to a pydantic schema (`response_format`) at temperature 0.4 by default. The Analyst is given the engine's MCP server as a tool (`MCPStdioTool`, allowed tools `attribute` and `match_context`) and fetches the account and context itself. | `explain/foundry.py`, `agents/analyst.py` | **Live when configured** (`FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_MODEL_DEPLOYMENT`, `pip install -e ".[foundry]"`). The agents are client-side Agent Framework agents calling the Foundry project. They are not registered as hosted agents in Foundry Agent Service, and orchestration is plain Python, not Agent Framework workflows. Opt-in live test: `REPLAY_ROOM_FOUNDRY_IT=1`. |
+| **Microsoft Entra ID** | Authenticates the Foundry calls with `DefaultAzureCredential`: `az login` locally, a managed identity on Azure. | `explain/foundry.py` | Live with Foundry. |
+| **MCP: the engine as an MCP server** | Exposes `detect_moments`, `attribute`, `match_context` and `narrate` over stdio or Streamable HTTP, with no logic of its own. The orchestrator can reach the engine through it (`McpEngine`, `--via-mcp`), the Analyst calls it as its tool, and any MCP client can use it. | `mcp_server/` | **Always on.** CI runs a real MCP client that lists and calls every tool over stdio (`mcp_server.smoke`). |
+| **Azure MCP server** (`npx @azure/mcp`) | Data access for the agents. The `kusto` namespace (`kusto_query`) streams the match feed from a **Fabric Eventhouse** for the Scout. The `cosmos` namespace (`cosmos_database_container_item_query`) reads a stored causal account from **Cosmos DB**. | `agents/azure.py`, `agents/sources.py` | **Read paths, live when configured** (`EVENTHOUSE_CLUSTER_URI`, `EVENTHOUSE_DATABASE` [`EVENTHOUSE_TABLE`=`MatchEvents`]; `COSMOS_ACCOUNT` [`COSMOS_DATABASE`=`replayroom`, `COSMOS_CONTAINER`=`accounts`]; Node.js for `npx`). Otherwise it falls back to the fixture feed and `data/accounts/`. The repo does not load the Eventhouse table or write accounts to Cosmos; those are provisioned outside it. |
+| **Azure AI Translator** | The Editor's language step. Every translated passage is re-checked by the Critic. | `agents/azure.py`, `agents/editor.py` | Live when configured (`AZURE_TRANSLATOR_KEY`, `AZURE_TRANSLATOR_REGION`). Otherwise English. |
+| **Azure AI Content Safety** | The Critic screens the final telling (text:analyze; severity ≥ 2 flags). | `agents/azure.py`, `agents/critic.py` | Live when configured (`CONTENT_SAFETY_ENDPOINT`, `CONTENT_SAFETY_KEY`). Otherwise the screen is skipped, with the reason in the trace. |
+| **Babylon.js** (open-source engine that originated at Microsoft) | The 3D moment viewer. | `viewer/` | Always on. |
+| **Azure Static Web Apps** | Hosting target for the viewer: `npm run build` writes `viewer/dist/` (the app plus the bundles) with `staticwebapp.config.json`. | `viewer/` | **Deploy-ready.** CI builds the static site. No deploy workflow is in the repo. |
+| **Azure Container Apps** | Hosting target for the engine's MCP server (`--http`) and the agents (managed identity for Entra). | `mcp_server/__main__.py` | **Target only.** HTTP mode exists. No container image or ACA config is in the repo. |
+| **GitHub Actions** | CI on every push and PR. The engine job installs, runs the pytest suite (every agent on its floor), the MCP smoke test, the agents end to end, and the bundle export. The viewer job typechecks, tests, and builds the static site. | `.github/workflows/ci.yml` | **Live.** |
 
-No football dataset carries a ground-truth "cause" label, so you don't *discover* causes — you **rank contributions by their measured effect on the outcome probability**, using the value and space models from §3. With positions **and** velocities available, run **two tracks and fuse them**.
-
-**Track A — on-ball (value-delta credit assignment).**
-1. Take the possession chain into the moment (§2).
-2. For each on-ball action, read its **VAEP signed delta** (and/or Δ-xT) — in RL terms, the action's *advantage*: how much it moved the team's expected outcome.
-3. Positive deltas = build-up contributors; the largest negative delta before a concession = the on-ball mistake.
-
-**Track B — off-ball (spatial contribution & failure).** *(Unlocked by position + velocity metadata.)*
-4. Over the moment window, compute **pitch control / space value** each frame (§3e).
-5. **Attribute space outcomes to players:** an attacker who created/occupied valuable space is credited; a defender who conceded dangerous space or broke his marking assignment is debited — quantified as the change in the attacker's scoring probability attributable to that positioning (space value → threat).
-6. **Locate the decisive frame** via velocities: the defender who stopped tracking his man (velocity/direction mismatch), the run that broke the line, the step-up that opened the channel.
-
-**Fusion & ranking.** Pool all candidates — on-ball actions **and** off-ball positioning facts — and rank by **absolute marginal effect on the outcome probability**. Top positives = creators; the top negative for the conceding team = the **headline cause**, which may now be an *off-ball* fact.
-
-**Counterfactual / what-if — now grounded.** Because positions are real, "what if another pass?" needs no invention: at the decision frame, compute the **value of each available option** from the actual positions — pass-completion probability from positions (**Spearman's physics-based pass model**) × the receiving location's value (xT / EPV, Fernández-Bornn-Cervone; SoccerMap, Fernández-Bornn). If the chosen action sits well below the best available, that's a grounded "a better option existed." **This is a core differentiator against PitchLens, not a stretch.**
-
-**Structured causal account:**
-```json
-{
-  "moment_id": "...",
-  "type": "goal",
-  "window": [63.0, 68.4],
-  "contributions": [
-    {"track": "on_ball",  "event_ref": "evt_412", "action": "through_ball", "player": "A9", "vaep": 0.11, "role": "assist"},
-    {"track": "off_ball", "frame_ref": "frm_1890", "player": "A7", "signal": "run_in_behind",        "space_created": 0.14, "role": "space_creation"},
-    {"track": "off_ball", "frame_ref": "frm_1894", "player": "D4", "signal": "stopped_tracking_runner", "space_conceded": 0.18, "role": "primary_cause"},
-    {"track": "on_ball",  "event_ref": "evt_418", "action": "shot", "player": "A7", "xg": 0.41, "role": "finish"}
-  ],
-  "headline_cause": "frm_1894",
-  "counterfactual": {"chosen": "shot", "chosen_value": 0.41, "best_alt": "square_pass_A9", "best_alt_value": 0.55},
-  "evidence": {"events": ["evt_410","evt_412","evt_418"], "frames": ["frm_1890","frm_1894"]}
-}
-```
-
-### How evidence is decided (the short rule)
-
-A fact becomes **evidence iff its marginal effect on the outcome probability clears a threshold** (top-k, or a delta cutoff):
-- **on-ball** facts are scored by **VAEP / Δ-xT** deltas;
-- **off-ball** facts by **space-value / marking** deltas (pitch-control change attributable to that player's positioning);
-- the **counterfactual** surfaces only when a better available option beats the chosen one by a margin.
-
-Every surviving fact is **bound to a concrete record** — an **event id** for on-ball, a **timestamped position frame** for off-ball — so each sentence stage 6 writes points at something real in the data, and the 3D viewer (§5) can jump the camera to exactly that frame. Nothing enters the account on vibes; low-impact touches are filtered out by the threshold.
-
-**Enhancement (optional):** Shapley values (SHAP) over the pooled contributions for a principled split when several share credit.
-
-**Microsoft tools.** Pure Python on **Azure Container Apps**; **no LLM in this stage**. Persist the account in **Cosmos DB** / Eventhouse.
-
-**Why.** This is the difference between winning and losing. Causality computed as value-delta + spatial credit assignment is correct, traceable, and un-fakeable — and with off-ball data it now reaches the claims fans actually argue (marking errors, vulnerable zones, "wrong option"), which a recap bot cannot touch.
+**Not used:** Azure Machine Learning (the metric models are trained locally with scikit-learn and
+socceraction, and committed in `data/models/`), Fabric Eventstream and Data Activator (detection is
+in-process Python), and Foundry IQ.
 
 ---
 
-## 5. 3D moment viewer (faithful)
+## 5. Ingest and moment detection
 
-**What it does.** Rebuilds the moment as an explorable 3D scene — pause, orbit, zoom — jumping to the exact frames the account cites.
+### 5.1 Ingest and replay clock (`ingest/`, `replay/`)
 
-**Approach.**
-- **Babylon.js** (open-source WebGL/WebGPU engine originated at Microsoft): pitch, orbit camera, scrub timeline.
-- **Positions are observed, not modeled.** Animate all players and the ball from the real per-frame positions and velocities, so the replay is faithful and the off-ball claims from §4 can be *shown* (highlight the defender who stopped tracking, the run into space, the zone that opened). Velocities give accurate motion and render the spec's speed/distance indicators directly.
-- Keep it **markers, not photoreal** — a clean reconstruction, deliberately lean so it doesn't steal time from §4.
+- **Feed adapter** (`ingest/adapter.py`): this is the only code that knows the raw format. It turns a
+  match directory (`meta.json`, `events.jsonl`, `tracking.csv.gz`) into canonical contracts:
+  - `MatchMeta`;
+  - a **SPADL** action table (`game, team, player, start_x, start_y, end_x, end_y, type, result,
+    bodypart, time`);
+  - context events;
+  - a tracking table (`timestamp, player_id, team_id, x, y, vx, vy` for every player and the ball).
 
-**Microsoft tools.** Babylon.js on **Azure Static Web Apps** / ACA; **Entra ID** auth.
+  The canonical frame is metres, origin at the bottom-left corner, home attacking +x. The raw feed is
+  centre-origin at 10 Hz, so the adapter does real normalisation.
+- **Synthetic generator** (`ingest/generator.py`): a deterministic agent simulation. Two formations slide
+  with the ball, the nearest defender presses, others mark, attackers run, and the carrier passes, shoots
+  or loses duels. Events and 10 Hz tracking come from one state. Generator v2 enforces offside at the pass
+  and labels deliberately mistimed runs as offside. The demo match `synthetic_match_02` (game `SYN-0055`)
+  has 8 explained moments.
+- **Replay clock** (`replay/clock.py`): periods on one continuous timeline. Pause, seek and speed work at
+  any time, with injectable time for tests. It sees only an `IngestSource`, so a live Eventstream source
+  could replace `FileReplaySource` without changes downstream.
 
-**Why.** Core UX bet (PES-style rewind-and-rotate), now able to *visually prove* the causal account because the positions are real.
+### 5.2 Moment detection (`detect/`)
 
----
+- **Possessions:** control rules, boundaries at period start, kickoff, set piece and regain. Fleeting
+  contested touches are merged into the surrounding possession.
+- **Explained classes:**
+  - `goal`;
+  - `turnover_to_shot`: a shot shortly after a regain, with a minimum xG;
+  - `big_chance_saved`: a non-penalty shot with xG ≥ 0.15 that did not score;
+  - `penalty`: explained through the foul that won it.
 
-## 6. Explanation renderer (grounded generation)
-
-**What it does.** Turns the §4 account into natural-language explanation + on-screen overlay + timed machine-readable output.
-
-**Approach — the LLM is a renderer, not a reasoner.**
-- Feed the model the **causal account JSON**; instruct it to narrate **only** from provided facts, carrying each `event_ref` / `frame_ref` into the sentence (the evidence trace).
-- **Structured outputs** (JSON-schema-constrained): per sentence `{text, ref, metric}` → machine-readable overlay, pinned to the data.
-- Anti-hallucination: low temperature; system prompt forbids any event/player/cause/position not in the account; schema constraint; **Foundry IQ** for retrieval grounding.
-
-**Microsoft tools.** **Microsoft Foundry — Foundry Agent Service** (GA; OpenAI Responses API; `pip install azure-ai-projects`, `AIProjectClient`, `PromptAgentDefinition`) + a Foundry model with structured outputs; Entra Agent ID.
-
-**Why.** Legibility lives here; correctness lives in §4.
-
----
-
-## 7. Personalization modes (analyst vs casual)
-
-**What it does.** Same moment, genuinely different experiences: analyst (dense metrics, full ranked chain, deltas, the counterfactual) vs casual (one plain paragraph); plus club/player focus and language.
-
-**Approach — view-transforms over one account, not re-analysis.**
-- The §4 account is the single source of truth. Personalization = different renders:
-  - **Analyst** = deterministic assembly (table of contributions, VAEP/xT/space deltas, the better-option comparison) — barely needs the model.
-  - **Casual** = §6 narration, short, jargon-free.
-  - **Player-focus** = filter the account to that player's contributions.
-  - **Club-focus** = frame from that team's perspective (sign of the deltas).
-  - **Language** = translate the casual narration (Azure AI Translator or a multilingual Foundry model).
-
-**Why.** Stage (e) is mandatory; view-transforms over one computed account make "two genuinely different experiences" cheap and correct.
+  Each explained moment has one shape: the possession chain, the tracking window (about 10 s of run-up),
+  the key event and the terminal `outcome_ref`. One moment per terminal action, by a fixed claim order.
+- **Flagged classes:** `offside`, `var_decision`, `injury`, `substitution`. These are surfaced but never
+  explained (`engine_eligible = false`), because their "why" is officiating, not scoring probability.
+- **Streaming:** `StreamingGoalDetector` runs the same pure function once a goal's window has arrived, so
+  streaming and batch detection produce identical moments.
 
 ---
 
-## The data contract gate (do this the moment data downloads)
+## 6. Render: bundle and 3D viewer
 
-1. **Off-ball tracking — RESOLVED:** the feed carries player positions + position changes (velocity). Off-ball attribution, pitch control, and the grounded counterfactual are all in scope; 3D positions are observed.
-2. **Coordinate system & units** (pitch dimensions, origin, frame rate) → needed for xT grid, pitch-control geometry, and the 3D render.
-3. **Event taxonomy** → map to SPADL action types.
-4. **Video feed?** The spec floats optional auto-eventing from video — **skip it** (a CV pipeline solo in days is a trap). Stay on the event + tracking stream.
+**Bundle** (`render/export.py`, deterministic and byte-identical for the same input). One JSON file per
+moment. It contains:
+
+- the `CausalAccount`;
+- every tracking frame of the window, with observed `x, y, vx, vy`, never filled in;
+- the cited SPADL events;
+- rosters and kits;
+- the `story`: the Analyst's plan as told, with each step's frame, its analyst caption and its fan text;
+- `proofs`: per fact and per beat, the players, frames, feed event ids and measured number;
+- `deep` positional evidence;
+- the plan, the match context and the Editor's editions.
+
+**Viewer** (`viewer/`, TypeScript + Babylon.js, static):
+
+- **Story** mode plays the plan beat by beat: camera, focus rings, one overlay and one caption per step.
+- **Explore** mode allows free scrubbing and orbiting.
+- An **Analyst / Fan** toggle switches between the two registers.
+- **Evidence on demand** at three layers: the claim; its proof (frame, players, number, feed event ids);
+  and **Go deeper** (control surface, average-position ghosts, the marking in green or red).
+- A match timeline and a causal-chain ribbon.
+
+Players are stylised markers moved along the observed tracking. The visuals are markers, not photoreal.
 
 ---
 
-## The winning/losing summary
+## 7. Personalization
 
-**Compute the causality — on-ball value deltas and off-ball pitch-control/marking deltas on the real positions — and let the model only speak it.** With tracking available, the account reaches the claims fans actually debate (the marking error, the vulnerable zone, the wrong option), each pinned to an event id or a position frame the 3D viewer can show. That is what 391 recap bots cannot do: explain *why*, correctly, and prove it on the pitch.
+The account is one source of truth, and personalization is a set of views over it. None of them
+re-analyses the moment.
+
+| View | How |
+|---|---|
+| Analyst register | Per beat, exact numbers with their rank and share ("VAEP +0.077: the largest of the move's 5 facts, 70% of the 0.110 xG chance"). |
+| Fan register | The same beats without numbers or jargon. The outcome is shown as a band ("A good chance"). |
+| Club focus | The headline is told from the chosen side (`perspective_headline`) and re-checked. The beats are unchanged. |
+| Player focus | The beats involving that player are marked `highlighted`. Nothing is added about them. |
+| Language | Azure AI Translator, then the Critic checks that numbers and names survived. Otherwise English. |
+
+---
+
+## 8. Verification
+
+- **Python:** 200+ pytest tests over contracts, detection, metrics, attribution, links, context, framing,
+  the Critic, the agents (including a planted invented fact being refused), the MCP server and the bundle.
+- **MCP smoke:** a real MCP client launches the server over stdio and calls every tool.
+- **Agents end to end** in template mode on the hero moment (`SYN-0055-big_chance_saved-2`).
+- **Viewer:** vitest (the Babylon NullEngine scene test runs headless), typecheck, and `npm run shots` for
+  headless-Edge screenshots of the hero moment's Story states.
+
+All of this runs in CI without any Azure credentials, because every agent runs on its floor.
+
+---
+
+## 9. Data contract and limits
+
+- The feed is **synthetic** throughout. The models learn the simulator's football, so retrain on real
+  matches when real data arrives. Adding a real feed means adding a new adapter in `ingest/adapter.py`,
+  and nothing downstream changes.
+- Positions and velocities are observed in the feed. The 3D replay draws them and never models them.
+- The red-card *class* is not detected. The Scout only describes red cards it sees in the feed.
+- There is no video or computer-vision eventing, by design.
 
 ---
 
 ## References
 
-**Papers / methods**
+**Football analytics**
 - Decroos, Bransen, Van Haaren, Davis. *Actions Speak Louder than Goals: Valuing Player Actions in Soccer.* KDD 2019 (Best Paper). SPADL + VAEP. https://people.cs.kuleuven.be/~tom.decroos/reports/kdd19_tomd.pdf
 - Karun Singh. *Introducing Expected Threat (xT).* 2018. https://karun.in/blog/expected-threat.html
-- Spearman, W. *Beyond Expected Goals.* MIT Sloan 2018. Pitch control + off-ball scoring opportunity; open implementation by Laurie Shaw (FriendsOfTracking).
-- Fernández, J. & Bornn, L. *Wide Open Spaces: A statistical technique for measuring space creation in professional soccer.* MIT Sloan 2018. Pitch control (player-influence areas), space occupation/creation.
-- Fernández, Bornn, Cervone. *Expected Possession Value (EPV).* Space value over possessions — for the counterfactual option-value surface.
-- Fernández & Bornn. *SoccerMap.* ECML-PKDD 2020. Full-pitch pass-probability/value surfaces — for ranked pass alternatives.
+- Fernández, J. & Bornn, L. *Wide Open Spaces: A statistical technique for measuring space creation in professional soccer.* MIT Sloan Sports Analytics Conference 2018. Player-influence pitch control.
+- Spearman, W. *Beyond Expected Goals.* MIT Sloan Sports Analytics Conference 2018. Pitch control; open implementation by Laurie Shaw (FriendsOfTracking).
 - `socceraction` (ML-KULeuven): SPADL, xT, VAEP. https://socceraction.readthedocs.io
-- FriendsOfTracking (D. Sumpter) / Laurie Shaw: open-source tracking + pitch-control code.
 
-**Microsoft tooling (current, 2026)**
-- Microsoft Foundry (formerly Azure AI Foundry) — Foundry Agent Service GA, Foundry Models, Foundry IQ. https://learn.microsoft.com/en-us/azure/foundry/whats-new-foundry
-- Microsoft Fabric Real-Time Intelligence — Eventstream, Eventhouse (KQL), Data Activator, Real-Time Hub.
-- Babylon.js — https://babylonjs.com
-- Azure Machine Learning, Azure Container Apps, Azure Static Web Apps, Azure Cosmos DB, Microsoft Entra ID, GitHub + GitHub Copilot.
+**Microsoft tooling**
+- Microsoft Foundry: https://learn.microsoft.com/azure/ai-foundry/
+- Microsoft Agent Framework (`agent-framework-core`, `agent-framework-foundry`)
+- Azure MCP Server (`@azure/mcp`); Model Context Protocol (`mcp` Python SDK)
+- Azure AI Translator, Azure AI Content Safety, Microsoft Fabric (Eventhouse), Azure Cosmos DB, Microsoft Entra ID
+- Babylon.js: https://babylonjs.com · Azure Static Web Apps · Azure Container Apps · GitHub Actions
+
+**In this repo:** `docs/adr/0001-agency-around-a-deterministic-core.md` (the agent/engine split),
+`docs/evidence-treatise.md` (the three evidence layers), `viewer/README.md` (everything on screen).

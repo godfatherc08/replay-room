@@ -1,6 +1,6 @@
 {
   "feed_version": "synthetic-v1",
-  "match_id": "SYN-0038",
+  "match_id": "SYN-0055",
   "competition": "Replay Room Synthetic League",
   "pitch": {
     "length_m": 105.0,
@@ -173,12 +173,12 @@
     }
   },
   "final_score": {
-    "home": 2,
-    "away": 0
+    "home": 1,
+    "away": 1
   },
   "generator": {
     "version": "2",
-    "seed": 38,
-    "attempt": 1
+    "seed": 55,
+    "attempt": 0
   }
 }

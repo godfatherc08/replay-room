@@ -23,9 +23,9 @@ jobs:
       - name: MCP smoke test (a client launches the engine server over stdio and calls every tool)
         run: python -m replay_room.mcp_server.smoke
       - name: Agents end to end (Scout menu -> Analyst -> Storyteller <-> Critic -> Editor)
-        run: python -m replay_room.agents --mode template --moment SYN-0007-big_chance_saved-3
+        run: python -m replay_room.agents --mode template --moment SYN-0055-big_chance_saved-2
       - name: Export the viewer bundles
-        run: python -m replay_room.render data/fixtures/synthetic_match_01 --narration template
+        run: python -m replay_room.render data/fixtures/synthetic_match_02 --narration template
       - uses: actions/upload-artifact@v4
         with:
           name: bundles

@@ -11,7 +11,9 @@
   only follows a defensive-cause headline;
 * **framing**: in a realized story the attack leads: the lead beat comes before
   every flaw, link and context beat; context is told only where it deviates;
-* **shape**: exactly one outcome beat, after the lead; counterfactuals after it.
+* **shape**: exactly one outcome beat, after the lead; counterfactuals after it;
+* **coverage**: every counterfactual the engine computed is told (the plan may
+  order and emphasize the account, not drop its sharpest finding).
 """
 
 from __future__ import annotations
@@ -86,4 +88,9 @@ def check_plan(plan: FramingPlan, account: CausalAccount, context: MatchContext 
         early = [b.beat_id for b in plan.beats if b.kind == "counterfactual" and order[b.beat_id] < order[outcomes[0].beat_id]]
         if early:
             errors.append(f"counterfactual beats {early} come after the outcome")
+    told_choices = {b.contribution_id for b in plan.beats if b.kind == "counterfactual"}
+    untold = [cf.contribution_id for cf in account.counterfactuals if cf.contribution_id not in told_choices]
+    if untold:
+        errors.append(f"the computed counterfactual on {', '.join(untold)} must be told (a counterfactual beat, "
+                      f"after the outcome)")
     return errors

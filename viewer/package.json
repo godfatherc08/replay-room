@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Replay Room 3D moment viewer (Babylon.js, static; loads bundles from python -m replay_room.render)",
   "scripts": {
-    "export": "cd .. && python -m replay_room.render data/fixtures/synthetic_match_01",
+    "export": "cd .. && python -m replay_room.render data/fixtures/synthetic_match_02",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

@@ -11,8 +11,8 @@ from replay_room.mcp_server.smoke import TOOLS, smoke
 
 
 @pytest.fixture(scope="module")
-def answers():
-    return asyncio.run(smoke("SYN-0007-goal-1"))
+def answers(fixture_dir):
+    return asyncio.run(smoke("SYN-0007-goal-1", fixture_dir))
 
 
 def test_the_server_lists_every_tool(answers):
@@ -35,7 +35,7 @@ def test_the_agents_reach_the_engine_over_mcp(fixture_dir, all_accounts, monkeyp
     from replay_room.agents.sources import FixtureStream
 
     monkeypatch.delenv("FOUNDRY_PROJECT_ENDPOINT", raising=False)
-    with McpEngine() as engine:  # opens one session, closes it cleanly from the same task
+    with McpEngine(fixture_dir) as engine:  # opens one session, closes it cleanly from the same task
         assert set(TOOLS) <= set(engine.tools)
         orch = Orchestrator(engine, FixtureStream(fixture_dir), mode="template")
         result = orch.explain("SYN-0007-goal-1")

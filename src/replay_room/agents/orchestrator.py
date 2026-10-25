@@ -61,7 +61,8 @@ class Orchestrator:
                  critic: Critic | None = None, editor: Editor | None = None):
         self.engine = engine
         self.stream = stream
-        self.analyst = analyst or Analyst("foundry" if mode == "foundry" else "rules")
+        self.analyst = analyst or Analyst("foundry" if mode == "foundry" else "rules",
+                                          match_dir=getattr(engine, "match_dir", None))
         self.storyteller = storyteller or Storyteller(mode)
         self.critic = critic or Critic()
         self.editor = editor or Editor(critic=self.critic)

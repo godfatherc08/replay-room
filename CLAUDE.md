@@ -115,19 +115,19 @@ code (`framing.check_plan` + `explain.validate`); every model step has a determi
 
 ```
 install:      .venv/Scripts/python -m pip install -e ".[dev]"     (Python 3.11-3.12; socceraction 1.5.3 needs multimethod<2)
-run replay:   python -m replay_room.replay data/fixtures/synthetic_match_01 --speed 4
+run replay:   python -m replay_room.replay data/fixtures/synthetic_match_02 --speed 4
               (--start/--end take timeline seconds or pPERIOD:SECONDS, e.g. p2:30; --instant ignores wall time;
                keys: space pause, +/- speed, f/b seek 10 s, q quit)
-detect:       python -m replay_room.detect data/fixtures/synthetic_match_01 [--classes goal,penalty|all|flagged] [--json] [--stream]
+detect:       python -m replay_room.detect data/fixtures/synthetic_match_02 [--classes goal,penalty|all|flagged] [--json] [--stream]
               (default: the explained classes goal, turnover_to_shot, big_chance_saved, penalty; --stream is goals only)
 train:        python -m replay_room.metrics.train      (builds/caches the 200-match corpus in data/corpus/, writes data/models/)
-metrics:      python -m replay_room.metrics data/fixtures/synthetic_match_01 [--frame-every 5]
-attribute:    python -m replay_room.attribution data/fixtures/synthetic_match_01 [--classes ...] [--json] [--save [DIR]]
+metrics:      python -m replay_room.metrics data/fixtures/synthetic_match_02 [--frame-every 5]
+attribute:    python -m replay_room.attribution data/fixtures/synthetic_match_02 [--classes ...] [--json] [--save [DIR]]
               (one CausalAccount per engine-eligible moment; --save writes data/accounts/<game>/<moment>.json)
 render:       python -m replay_room.render data/fixtures/synthetic_match_02   (accounts + viewer bundles in data/accounts/; the demo corpus)
 viewer:       cd viewer && npm install && npm run dev   (http://localhost:5173/?moment=<id>[&mode=fan][&step=<n>|&jump=<contribution>][&play=1][&stadium=0]; npm test)
 shots:        cd viewer && npm run shots -- <outDir>   (dev server up; headless Edge screenshots of the hero moment's Story states)
-explain:      python -m replay_room.explain data/accounts/SYN-0007/<moment>.json [--mode foundry|template] [--refresh] [--json]
+explain:      python -m replay_room.explain data/accounts/SYN-0055/<moment>.json [--mode foundry|template] [--refresh] [--json]
               (Foundry: pip install -e ".[foundry]", az login, FOUNDRY_PROJECT_ENDPOINT + FOUNDRY_MODEL_DEPLOYMENT;
                unset or failing -> the deterministic composer, Critic-checked; live test: REPLAY_ROOM_FOUNDRY_IT=1 pytest tests/test_explain.py)
 agents:       python -m replay_room.agents [--moment <id>] [--via-mcp] [--mode foundry|template] [--focus-team T]
@@ -135,7 +135,7 @@ agents:       python -m replay_room.agents [--moment <id>] [--via-mcp] [--mode f
 mcp server:   python -m replay_room.mcp_server [--http --port 8765]   (tools: detect_moments, attribute, match_context, narrate)
 mcp smoke:    python -m replay_room.mcp_server.smoke [--moment <id>]
 ci:           .github/workflows/ci.yml (pip install -e ".[dev]" -c requirements-ci.txt; pytest; smoke; agents; render; viewer)
-gen fixture:  python -m replay_room.ingest.generator --seed 38 --out data/fixtures/synthetic_match_02   (generator v2: onside;
+gen fixture:  python -m replay_room.ingest.generator --seed 55 --out data/fixtures/synthetic_match_02   (generator v2: onside;
               synthetic_match_01 = seed 7, generator v1, kept as the test fixture)
 schema:       python -m replay_room.contracts      (regenerates data/schema/causal_account.schema.json)
 test:         python -m pytest

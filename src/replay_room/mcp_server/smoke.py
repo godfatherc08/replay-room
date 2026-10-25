@@ -1,6 +1,6 @@
 """MCP smoke test: launch the engine server over stdio, list its tools and call each one.
 
-    python -m replay_room.mcp_server.smoke [--moment SYN-0007-goal-1]
+    python -m replay_room.mcp_server.smoke [--moment SYN-0055-goal-1] [--match DIR]
 
 Prints one line per tool with the shape of what came back; exits non-zero if
 a tool is missing or a call fails.
@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from mcp import Client, StdioServerParameters
@@ -28,8 +29,9 @@ def payload(result: Any) -> dict[str, Any]:
     return json.loads(result.content[0].text)
 
 
-async def smoke(moment_id: str) -> dict[str, Any]:
-    params = StdioServerParameters(command=sys.executable, args=["-m", "replay_room.mcp_server"])
+async def smoke(moment_id: str, match_dir: str | Path | None = None) -> dict[str, Any]:
+    env = {"REPLAY_ROOM_MATCH": str(match_dir)} if match_dir else None  # else the server's default match
+    params = StdioServerParameters(command=sys.executable, args=["-m", "replay_room.mcp_server"], env=env)
     async with Client(params, read_timeout_seconds=600) as client:
         listed = sorted(t.name for t in (await client.list_tools()).tools)
         missing = sorted(set(TOOLS) - set(listed))
@@ -46,9 +48,10 @@ async def smoke(moment_id: str) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="replay_room.mcp_server.smoke")
-    ap.add_argument("--moment", default="SYN-0007-goal-1")
+    ap.add_argument("--moment", default="SYN-0055-goal-1")
+    ap.add_argument("--match", help="match directory (default: the server's default match)")
     args = ap.parse_args(argv)
-    out = asyncio.run(smoke(args.moment))
+    out = asyncio.run(smoke(args.moment, args.match))
     print(f"tools: {', '.join(out['tools'])}")
     moments = out["detect_moments"]["moments"]
     print(f"detect_moments: {len(moments)} moments "

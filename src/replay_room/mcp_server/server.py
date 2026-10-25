@@ -12,7 +12,7 @@ Tools (all deterministic; the engine's outputs as JSON, unchanged):
   (``template``: the composer; ``foundry``: the model, Critic-gated).
 
 ``REPLAY_ROOM_MATCH`` (environment) names the match directory; the default is
-the synthetic fixture.
+the synthetic fixture (``DEFAULT_MATCH``).
 """
 
 from __future__ import annotations

@@ -27,7 +27,7 @@ from replay_room.metrics.models import MetricModels, load_models
 from replay_room.metrics.valuation import rate_actions, value_moment
 from replay_room.render.display import match_clock
 
-DEFAULT_MATCH = Path(__file__).resolve().parents[3] / "data" / "fixtures" / "synthetic_match_01"
+DEFAULT_MATCH = Path(__file__).resolve().parents[3] / "data" / "fixtures" / "synthetic_match_02"
 ALL = (*EXPLAINED_CLASSES, *FLAGGED_CLASSES)
 
 

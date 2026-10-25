@@ -2,7 +2,7 @@
 
     python -m replay_room.agents                                   # Scout menu + the hero moment, in-process
     python -m replay_room.agents --via-mcp                         # the engine over its MCP server (stdio)
-    python -m replay_room.agents --moment SYN-0007-goal-1 --focus-team NBR --language fr
+    python -m replay_room.agents --moment SYN-0055-goal-1 --focus-team NBR --language fr
     python -m replay_room.agents --mode template                   # no model at all (rules plan + composer)
     python -m replay_room.agents --json                            # the full result
 
@@ -24,7 +24,7 @@ from replay_room.agents.orchestrator import Orchestrator
 from replay_room.agents.sources import stream_from_env
 from replay_room.mcp_server.service import DEFAULT_MATCH
 
-HERO = "SYN-0007-big_chance_saved-3"
+HERO = "SYN-0055-big_chance_saved-2"
 
 
 def main(argv: list[str] | None = None, out: TextIO = sys.stdout) -> int:

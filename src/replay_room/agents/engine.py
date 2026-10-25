@@ -46,6 +46,7 @@ class InProcessEngine:
         from replay_room.mcp_server.service import service
 
         self.svc = svc or service(match_dir)
+        self.match_dir = self.svc.match_dir
 
     def detect_moments(self, classes: str = "all") -> dict[str, Any]:
         from replay_room.detect.__main__ import parse_classes
@@ -76,6 +77,7 @@ class McpEngine:
     def __init__(self, match_dir: str | Path | None = None, timeout_s: float = 600):
         from mcp import Client, StdioServerParameters
 
+        self.match_dir = Path(match_dir) if match_dir else None
         env = {**os.environ, **({"REPLAY_ROOM_MATCH": str(match_dir)} if match_dir else {})}
         self._params = StdioServerParameters(command=sys.executable, args=["-m", "replay_room.mcp_server"], env=env)
         self._client_cls = Client
